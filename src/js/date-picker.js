@@ -61,15 +61,16 @@ export function initDatePickers() {
  * задолженностей/платежей в калькуляторе неустойки). Значение по умолчанию
  * — пустое; проставить исходное значение можно через параметр value (ISO).
  */
-export function createDateField({ id = "", extraHiddenClass = "", value = "" } = {}) {
+export function createDateField({ id = "", extraHiddenClass = "", value = "", compact = false } = {}) {
   ensurePopup();
 
   const wrapper = document.createElement("div");
   wrapper.className = "relative";
+  const paddingClass = compact ? "px-2 py-1.5" : "px-3 py-2";
   wrapper.innerHTML = `
     <input type="hidden" ${id ? `id="${id}"` : ""} class="${extraHiddenClass}" value="${value}" />
     <input type="text" readonly placeholder="дд.мм.гггг"
-      class="date-field-display w-full px-3 py-2 border border-slate-300 rounded-lg
+      class="date-field-display w-full ${paddingClass} border border-slate-300 rounded-lg
              text-sm cursor-pointer bg-white hover:border-slate-400" />
   `;
 

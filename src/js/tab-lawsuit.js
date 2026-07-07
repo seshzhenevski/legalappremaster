@@ -58,7 +58,7 @@ export function initLawsuitTab() {
     .appendChild(createDateField({ id: "lawsuit-pretenzia-date" }));
   document
     .getElementById("lawsuit-claim-date-slot")
-    .appendChild(createDateField({ id: "lawsuit-claim-date" }));
+    .appendChild(createDateField({ id: "lawsuit-claim-date", compact: true }));
 }
 
 /**

@@ -58,7 +58,8 @@
   <!-- Шапка -->
   <header class="shrink-0 bg-white border-b border-slate-200 px-6 py-3">
     <h1 class="text-lg font-semibold flex items-center gap-2">
-      ⚖️ Юридический инструментарий
+      <span>⚖️</span>
+      <span style="color:#2563eb;">Legal App</span>
     </h1>
   </header>
 
@@ -90,7 +91,7 @@
 
         <!-- Левая колонка: форма -->
         <div class="flex flex-col h-full min-h-0 gap-4">
-          <div class="flex-1 min-h-0 overflow-y-auto custom-scroll space-y-4 pr-3">
+          <div class="flex-1 min-h-0 overflow-y-auto custom-scroll space-y-4 w-[calc(100%+14px)] -mr-[14px] pr-2">
 
             <!-- Ответчик -->
             <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
@@ -132,25 +133,25 @@
             </div>
 
             <!-- Финансы -->
-            <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+            <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3 overflow-x-hidden">
               <div class="flex items-center gap-2 font-medium text-slate-700">💰 Финансы</div>
-              <div class="border-t border-slate-100 pt-3 space-y-3">
-                <div class="flex items-center gap-3">
-                  <label class="text-sm text-slate-600 whitespace-nowrap w-36">Почтовые расходы:</label>
+              <div class="border-t border-slate-100 pt-3 space-y-3 overflow-x-hidden">
+                <div class="flex items-center gap-2">
+                  <label class="text-xs text-slate-600 whitespace-nowrap shrink-0">Почтовые расходы:</label>
                   <input type="text" id="lawsuit-postal" placeholder="0,00"
-                    class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm" />
-                  <span class="text-sm text-slate-500 whitespace-nowrap">руб.</span>
+                    class="flex-1 min-w-0 px-2 py-1.5 border border-slate-300 rounded-lg text-sm" />
+                  <span class="text-xs text-slate-500 whitespace-nowrap shrink-0">руб.</span>
                 </div>
-                <div class="flex items-center gap-2 flex-nowrap overflow-x-auto">
-                  <label class="text-sm text-slate-600 whitespace-nowrap w-36 shrink-0">Процент неустойки:</label>
+                <div class="flex items-center gap-1 flex-nowrap w-full">
+                  <label class="text-xs text-slate-600 whitespace-nowrap shrink-0">Процент неустойки:</label>
                   <input type="text" id="lawsuit-rate" value="0.1"
-                    class="w-16 shrink-0 px-3 py-2 border border-slate-300 rounded-lg text-sm" />
-                  <span class="text-sm text-slate-500 whitespace-nowrap shrink-0">% в день до</span>
-                  <div id="lawsuit-claim-date-slot" class="w-32 shrink-0"></div>
-                  <span class="text-sm text-slate-500 whitespace-nowrap shrink-0">, не более</span>
+                    class="w-10 shrink-0 px-1.5 py-1.5 border border-slate-300 rounded-lg text-sm text-center" />
+                  <span class="text-xs text-slate-500 whitespace-nowrap shrink-0">% в день до</span>
+                  <div id="lawsuit-claim-date-slot" class="w-24 shrink-0"></div>
+                  <span class="text-xs text-slate-500 whitespace-nowrap shrink-0">, не более</span>
                   <input type="text" id="lawsuit-cap"
-                    class="w-16 shrink-0 px-3 py-2 border border-slate-300 rounded-lg text-sm" />
-                  <span class="text-sm text-slate-500 shrink-0">%</span>
+                    class="w-10 shrink-0 px-1.5 py-1.5 border border-slate-300 rounded-lg text-sm text-center" />
+                  <span class="text-xs text-slate-500 shrink-0">%</span>
                 </div>
               </div>
             </div>
@@ -247,7 +248,7 @@
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 h-full">
 
         <div class="flex flex-col h-full min-h-0 gap-4">
-          <div class="flex-1 min-h-0 overflow-y-auto custom-scroll space-y-4 pr-3">
+          <div class="flex-1 min-h-0 overflow-y-auto custom-scroll space-y-4 w-[calc(100%+14px)] -mr-[14px] pr-2">
             <!-- Шаг 1 -->
             <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
               <div class="flex items-center gap-2 font-medium text-slate-700">📂 Шаг 1: Выбор папок</div>
@@ -389,25 +390,35 @@
             <!-- Ставка неустойки -->
             <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
               <div class="flex items-center gap-2 font-medium text-slate-700">📈 Ставка неустойки</div>
-              <div class="border-t border-slate-100 pt-3">
-                <div class="flex items-center gap-2 flex-nowrap overflow-x-auto">
-                  <label class="text-sm text-slate-600 whitespace-nowrap w-36 shrink-0">Ставка неустойки:</label>
-                  <input type="text" id="penalty-rate" value="0.1"
-                    class="w-16 shrink-0 px-3 py-2 border border-slate-300 rounded-lg text-sm" />
-                  <span class="text-sm text-slate-500 shrink-0">%</span>
+              <div class="border-t border-slate-100 pt-3 overflow-x-hidden">
+                <div class="flex items-start gap-2 flex-nowrap">
+                  <label class="text-xs text-slate-600 whitespace-nowrap shrink-0 self-center">Ставка неустойки:</label>
+
+                  <div class="shrink-0">
+                    <div class="flex items-center gap-1">
+                      <input type="text" id="penalty-rate" value="0.1"
+                        class="w-10 px-1.5 py-1.5 border border-slate-300 rounded-lg text-sm text-center" />
+                      <span class="text-xs text-slate-500 shrink-0">%</span>
+                    </div>
+                    <div class="text-xs text-slate-400 mt-1 whitespace-nowrap">Процент неустойки в договоре</div>
+                  </div>
+
                   <select id="penalty-rate-type"
-                    class="shrink-0 px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                    class="shrink-0 self-center px-2 py-1.5 border border-slate-300 rounded-lg text-sm">
                     <option value="day">в день</option>
                     <option value="year">в год</option>
                   </select>
-                  <span class="text-sm text-slate-500 whitespace-nowrap shrink-0">, не более</span>
-                  <input type="text" id="penalty-cap"
-                    class="w-16 shrink-0 px-3 py-2 border border-slate-300 rounded-lg text-sm" />
-                  <span class="text-sm text-slate-500 shrink-0">%</span>
-                </div>
-                <div class="flex justify-between text-xs text-slate-400 mt-1">
-                  <span>Процент неустойки в договоре</span>
-                  <span>от суммы долга</span>
+
+                  <span class="text-xs text-slate-500 whitespace-nowrap shrink-0 self-center">, не более</span>
+
+                  <div class="shrink-0">
+                    <div class="flex items-center gap-1">
+                      <input type="text" id="penalty-cap"
+                        class="w-10 px-1.5 py-1.5 border border-slate-300 rounded-lg text-sm text-center" />
+                      <span class="text-xs text-slate-500 shrink-0">%</span>
+                    </div>
+                    <div class="text-xs text-slate-400 mt-1 whitespace-nowrap">от суммы долга</div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -496,8 +507,8 @@
               <label class="block text-xs text-slate-500 mb-1">Сумма иска, ₽</label>
               <input type="text" id="duty-claim-amount" placeholder="Например: 1 250 000"
                 class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
-              <div class="mt-1 text-xs text-slate-500">&nbsp;</div>
-              <div class="mt-1 text-xs text-slate-400">
+              <div class="mt-1 text-xs text-slate-500 min-h-[1.25rem]">&nbsp;</div>
+              <div class="mt-1 text-xs text-slate-400 min-h-[2rem]">
                 Реквизиты плательщика и получателя (Казначейство) фиксированы.
               </div>
             </div>
@@ -517,8 +528,8 @@
               <label class="block text-xs text-slate-500 mb-1">Госпошлина, ₽</label>
               <input type="text" id="duty-amount-input" placeholder="—"
                 class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
-              <div id="duty-amount-words" class="mt-1 text-xs text-slate-500"></div>
-              <div class="mt-1 text-xs text-slate-400">
+              <div id="duty-amount-words" class="mt-1 text-xs text-slate-500 min-h-[1.25rem]"></div>
+              <div class="mt-1 text-xs text-slate-400 min-h-[2rem]">
                 Сумму можно поправить вручную или ввести без расчёта.
               </div>
             </div>
