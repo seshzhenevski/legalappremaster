@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Юридический инструментарий</title>
+  <link rel="stylesheet" href="css/tailwind.css" />
+  <style>
+    /* Индикатор выполнения (определённый) — заполняется по реальному проценту готовности */
+    .progress-bar-track {
+      position: relative;
+      height: 6px;
+      border-radius: 3px;
+      background: #e2e8f0;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: #2563eb;
+      border-radius: 3px;
+      transition: width 0.25s ease;
+    }
+
+    /* Зона drag-and-drop для Excel-файлов */
+    .drop-zone {
+      border: 1px dashed #cbd5e1;
+      border-radius: 0.5rem;
+      transition: border-color 0.15s ease, background-color 0.15s ease;
+    }
+    .drop-zone.drop-zone-active {
+      border-color: #2563eb;
+      background-color: #eff6ff;
+    }
+
+    /* Минималистичный кастомный скроллбар для прокручиваемых колонок */
+    .custom-scroll {
+      scrollbar-width: thin;
+      scrollbar-color: #cbd5e1 transparent;
+    }
+    .custom-scroll::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scroll::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background-color: #cbd5e1;
+      border-radius: 9999px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb:hover {
+      background-color: #94a3b8;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 h-screen flex flex-col overflow-hidden">
+
+  <!-- Шапка -->
+  <header class="shrink-0 bg-white border-b border-slate-200 px-6 py-3">
+    <h1 class="text-lg font-semibold flex items-center gap-2">
+      ⚖️ Юридический инструментарий
+    </h1>
+  </header>
+
+  <!-- Навигация по вкладкам -->
+  <nav class="shrink-0 bg-white border-b border-slate-200 px-6 flex gap-1">
+    <button data-tab-target="panel-lawsuit"
+      class="px-4 py-3 text-sm font-medium border-b-2 border-transparent">
+      📝 Генератор искового заявления
+    </button>
+    <button data-tab-target="panel-sorter"
+      class="px-4 py-3 text-sm font-medium border-b-2 border-transparent">
+      📁 Сортировщик документов
+    </button>
+    <button data-tab-target="panel-penalty"
+      class="px-4 py-3 text-sm font-medium border-b-2 border-transparent">
+      💰 Калькулятор неустойки
+    </button>
+    <button data-tab-target="panel-duty"
+      class="px-4 py-3 text-sm font-medium border-b-2 border-transparent">
+      🏛 Калькулятор госпошлины
+    </button>
+  </nav>
+
+  <main class="flex-1 min-h-0 p-5">
+
+    <!-- Панель: Генератор иска -->
+    <section id="panel-lawsuit" data-tab-panel class="hidden h-full">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 h-full">
+
+        <!-- Левая колонка: форма -->
+        <div class="flex flex-col h-full min-h-0 gap-4">
+          <div class="flex-1 min-h-0 overflow-y-auto custom-scroll space-y-4 pr-3">
+
+            <!-- Ответчик -->
+            <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+              <div class="flex items-center gap-2 font-medium text-slate-700">🏢 Ответчик</div>
+              <div class="border-t border-slate-100 pt-3 space-y-3">
+                <div class="flex gap-2">
+                  <input type="text" id="lawsuit-defendant-inn" placeholder="ИНН (10 или 12 цифр)"
+                    class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+                  <button id="lawsuit-inn-search-button"
+                    class="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm whitespace-nowrap
+                           flex items-center gap-1.5">
+                    🔍 Найти
+                  </button>
+                </div>
+
+                <input type="text" id="lawsuit-defendant-name" placeholder="ООО «Ответчик»"
+                  class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+                <input type="text" id="lawsuit-defendant-ogrn" placeholder="ОГРН"
+                  class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+                <input type="text" id="lawsuit-defendant-address" placeholder="Адрес"
+                  class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+              </div>
+            </div>
+
+            <!-- Претензия -->
+            <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+              <div class="flex items-center gap-2 font-medium text-slate-700">📨 Претензия</div>
+              <div class="border-t border-slate-100 pt-3 grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs text-slate-500 mb-1">Номер претензии</label>
+                  <input type="text" id="lawsuit-pretenzia-number"
+                    class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-500 mb-1">Дата претензии</label>
+                  <div id="lawsuit-pretenzia-date-slot"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Финансы -->
+            <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+              <div class="flex items-center gap-2 font-medium text-slate-700">💰 Финансы</div>
+              <div class="border-t border-slate-100 pt-3 space-y-3">
+                <div class="flex items-center gap-3">
+                  <label class="text-sm text-slate-600 whitespace-nowrap w-36">Почтовые расходы:</label>
+                  <input type="text" id="lawsuit-postal" placeholder="0,00"
+                    class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+                  <span class="text-sm text-slate-500 whitespace-nowrap">руб.</span>
+                </div>
+                <div class="flex items-center gap-2 flex-nowrap overflow-x-auto">
+                  <label class="text-sm text-slate-600 whitespace-nowrap w-36 shrink-0">Процент неустойки:</label>
+                  <input type="text" id="lawsuit-rate" value="0.1"
+                    class="w-16 shrink-0 px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+                  <span class="text-sm text-slate-500 whitespace-nowrap shrink-0">% в день до</span>
+                  <div id="lawsuit-claim-date-slot" class="w-32 shrink-0"></div>
+                  <span class="text-sm text-slate-500 whitespace-nowrap shrink-0">, не более</span>
+                  <input type="text" id="lawsuit-cap"
+                    class="w-16 shrink-0 px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+                  <span class="text-sm text-slate-500 shrink-0">%</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Файлы -->
+            <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+              <div class="flex items-center gap-2 font-medium text-slate-700">📂 Файлы</div>
+              <div class="border-t border-slate-100 pt-3 space-y-3">
+                <div>
+                  <label class="block text-xs text-slate-500 mb-1">
+                    Данные о счетах (для поиска подтверждающих документов):
+                  </label>
+                  <textarea id="lawsuit-invoice-text" rows="4"
+                    placeholder="Счет на оплату № 65625 от 24.06.2025 на сумму 40 480 рублей&#10;1. Акт приема-передачи № 206391 от 23.06.2025&#10;2. УПД № 107867 от 23.06.2025"
+                    class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono"></textarea>
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-500 mb-1">Excel со счетами:</label>
+                  <div id="lawsuit-excel-drop-zone" class="drop-zone flex gap-2">
+                    <input type="text" id="lawsuit-excel-path" readonly
+                      placeholder="можно перетащить файл сюда"
+                      class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-slate-50" />
+                    <button id="lawsuit-excel-button"
+                      class="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm">Обзор</button>
+                  </div>
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-500 mb-1">Папка с закрывающими документами:</label>
+                  <div class="flex gap-2">
+                    <input type="text" id="lawsuit-closing-docs-path" readonly
+                      class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-slate-50" />
+                    <button id="lawsuit-closing-docs-button"
+                      class="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm">Обзор</button>
+                  </div>
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-500 mb-1">Папка сохранения результата:</label>
+                  <div class="flex gap-2">
+                    <input type="text" id="lawsuit-output-path" readonly
+                      class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-slate-50" />
+                    <button id="lawsuit-output-button"
+                      class="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm">Обзор</button>
+                  </div>
+                </div>
+                <label class="flex items-center gap-2 text-sm">
+                  <input type="checkbox" id="lawsuit-docs-signed" checked />
+                  Закрывающие документы подписаны
+                </label>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Действия (не прокручивается) -->
+          <div class="shrink-0 bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+            <div class="flex items-center gap-2 font-medium text-slate-700">⚙️ Действия</div>
+            <div class="border-t border-slate-100 pt-3 space-y-2">
+              <button id="lawsuit-generate-button"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg
+                       flex items-center justify-center gap-2">
+                📝 Сформировать иск
+              </button>
+              <button id="lawsuit-clear-button"
+                class="w-full border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium
+                       py-2.5 rounded-lg">
+                Очистить
+              </button>
+            </div>
+            <div id="lawsuit-progress" class="progress-bar-track hidden">
+            <div id="lawsuit-progress-fill" class="progress-bar-fill"></div>
+          </div>
+          </div>
+        </div>
+
+        <!-- Правая колонка: Процесс формирования -->
+        <div class="bg-white rounded-xl border border-slate-200 p-5 flex flex-col h-full min-h-0 space-y-3">
+          <div class="shrink-0 flex items-center gap-2 font-medium text-slate-700">
+            📊 Процесс формирования
+          </div>
+          <div id="lawsuit-log"
+            class="flex-1 min-h-0 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg p-3
+                   overflow-y-auto custom-scroll space-y-0.5"></div>
+          <button id="lawsuit-clear-log-button"
+            class="shrink-0 w-full bg-slate-100 hover:bg-slate-200 rounded-lg py-2 text-sm">
+            Очистить лог
+          </button>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Панель: Сортировщик -->
+    <section id="panel-sorter" data-tab-panel class="hidden h-full">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 h-full">
+
+        <div class="flex flex-col h-full min-h-0 gap-4">
+          <div class="flex-1 min-h-0 overflow-y-auto custom-scroll space-y-4 pr-3">
+            <!-- Шаг 1 -->
+            <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+              <div class="flex items-center gap-2 font-medium text-slate-700">📂 Шаг 1: Выбор папок</div>
+              <div class="border-t border-slate-100 pt-3 space-y-3">
+                <div class="flex gap-2">
+                  <input type="text" id="sorter-source-path" readonly placeholder="Папка с исходными PDF"
+                    class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-slate-50" />
+                  <button id="sorter-source-button"
+                    class="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm">Обзор</button>
+                </div>
+                <div class="flex gap-2">
+                  <input type="text" id="sorter-output-path" readonly placeholder="Папка для результата"
+                    class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-slate-50" />
+                  <button id="sorter-output-button"
+                    class="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm">Обзор</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Шаг 2 -->
+            <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2 font-medium text-slate-700">📋 Шаг 2: Данные о счетах</div>
+                <button id="sorter-load-file-button"
+                  class="text-sm text-blue-600 hover:text-blue-700 whitespace-nowrap ml-2">
+                  📄 Загрузить из файла
+                </button>
+              </div>
+              <div class="border-t border-slate-100 pt-3 space-y-2">
+                <div class="text-xs text-slate-500">Вставьте информацию из 1С (Ctrl+V)</div>
+                <textarea id="sorter-invoice-text" rows="6"
+                  placeholder="Счет на оплату № 65625 от 24.06.2025 на сумму 40 480 рублей&#10;1. Акт приема-передачи № 206391 от 23.06.2025&#10;2. УПД № 107867 от 23.06.2025"
+                  class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono"></textarea>
+              </div>
+            </div>
+
+            <!-- Настройки и запуск -->
+            <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+              <div class="flex items-center gap-2 font-medium text-slate-700">⚙️ Настройки и запуск</div>
+              <div class="border-t border-slate-100 pt-3 space-y-1">
+                <label class="flex items-center gap-2 text-sm">
+                  <input type="checkbox" id="sorter-check-integrity" checked />
+                  Проверять целостность пакетов
+                </label>
+                <label class="flex items-center gap-2 text-sm">
+                  <input type="checkbox" id="sorter-open-after" />
+                  Открыть папку после обработки
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Действия (не прокручивается) -->
+          <div class="shrink-0 bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+            <div class="flex items-center gap-2 font-medium text-slate-700">⚙️ Действия</div>
+            <div class="border-t border-slate-100 pt-3 space-y-2">
+              <button id="sorter-run-button"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg">
+                ▶ НАЧАТЬ ОБРАБОТКУ
+              </button>
+              <div class="flex gap-2">
+                <button id="sorter-clear-button"
+                  class="flex-1 border border-slate-300 hover:bg-slate-50 text-slate-700 py-2 rounded-lg text-sm">
+                  Очистить
+                </button>
+                <button id="sorter-help-button"
+                  class="flex-1 border border-slate-300 hover:bg-slate-50 text-slate-700 py-2 rounded-lg text-sm">
+                  Справка
+                </button>
+              </div>
+            </div>
+            <div id="sorter-progress" class="progress-bar-track hidden">
+              <div id="sorter-progress-fill" class="progress-bar-fill"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Правая колонка: Процесс обработки -->
+        <div class="bg-white rounded-xl border border-slate-200 p-5 flex flex-col h-full min-h-0 space-y-3">
+          <div class="shrink-0 flex items-center gap-2 font-medium text-slate-700">📊 Процесс обработки</div>
+          <div id="sorter-log"
+            class="flex-1 min-h-0 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg p-3
+                   overflow-y-auto custom-scroll space-y-0.5"></div>
+          <button id="sorter-clear-log-button"
+            class="shrink-0 w-full bg-slate-100 hover:bg-slate-200 rounded-lg py-2 text-sm">
+            Очистить лог
+          </button>
+          <div id="sorter-stats" class="shrink-0 grid grid-cols-3 gap-3 text-center">
+            <div class="bg-slate-50 rounded-lg py-2">
+              <div class="text-lg font-semibold text-slate-800" id="sorter-stat-total">0</div>
+              <div class="text-xs text-slate-500">Обработано</div>
+            </div>
+            <div class="bg-slate-50 rounded-lg py-2">
+              <div class="text-lg font-semibold text-green-700" id="sorter-stat-success">0</div>
+              <div class="text-xs text-slate-500">Успешно</div>
+            </div>
+            <div class="bg-slate-50 rounded-lg py-2">
+              <div class="text-lg font-semibold text-amber-600" id="sorter-stat-warnings">0</div>
+              <div class="text-xs text-slate-500">Предупреждений</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Панель: Калькулятор неустойки -->
+    <section id="panel-penalty" data-tab-panel class="hidden h-full">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 h-full">
+
+        <div class="flex flex-col h-full min-h-0 gap-4">
+          <div class="flex-1 min-h-0 overflow-y-auto custom-scroll space-y-4 pr-3">
+            <!-- Сумма задолженности и период -->
+            <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+              <div class="flex items-center gap-2 font-medium text-slate-700">💰 Сумма задолженности и период</div>
+              <div class="border-t border-slate-100 pt-3 space-y-3">
+                <div id="penalty-excel-drop-zone" class="drop-zone flex items-center justify-between p-2">
+                  <label class="text-xs text-slate-500">
+                    Задолженности (можно перетащить Excel сюда)
+                  </label>
+                  <button id="penalty-import-excel-button"
+                    class="text-sm text-blue-600 hover:text-blue-700 whitespace-nowrap ml-2">
+                    📂 Excel
+                  </button>
+                </div>
+                <div id="penalty-debts-container"></div>
+                <button id="penalty-add-debt-button"
+                  class="text-sm text-blue-600 hover:text-blue-700">
+                  + Добавить задолженность
+                </button>
+
+                <div>
+                  <label class="block text-xs text-slate-500 mb-1">Дата окончания периода</label>
+                  <div id="penalty-period-end-slot"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Ставка неустойки -->
+            <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+              <div class="flex items-center gap-2 font-medium text-slate-700">📈 Ставка неустойки</div>
+              <div class="border-t border-slate-100 pt-3">
+                <div class="flex items-center gap-2 flex-nowrap overflow-x-auto">
+                  <label class="text-sm text-slate-600 whitespace-nowrap w-36 shrink-0">Ставка неустойки:</label>
+                  <input type="text" id="penalty-rate" value="0.1"
+                    class="w-16 shrink-0 px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+                  <span class="text-sm text-slate-500 shrink-0">%</span>
+                  <select id="penalty-rate-type"
+                    class="shrink-0 px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                    <option value="day">в день</option>
+                    <option value="year">в год</option>
+                  </select>
+                  <span class="text-sm text-slate-500 whitespace-nowrap shrink-0">, не более</span>
+                  <input type="text" id="penalty-cap"
+                    class="w-16 shrink-0 px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+                  <span class="text-sm text-slate-500 shrink-0">%</span>
+                </div>
+                <div class="flex justify-between text-xs text-slate-400 mt-1">
+                  <span>Процент неустойки в договоре</span>
+                  <span>от суммы долга</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Частичная оплата -->
+            <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-2">
+              <div class="flex items-center gap-2 font-medium text-slate-700">➖ Частичная оплата</div>
+              <div class="border-t border-slate-100 pt-3 space-y-2">
+                <div id="penalty-payments-container"></div>
+                <button id="penalty-add-payment-button"
+                  class="text-sm text-blue-600 hover:text-blue-700">
+                  + Добавить платёж
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Действия (не прокручивается) -->
+          <div class="shrink-0 bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+            <div class="flex items-center gap-2 font-medium text-slate-700">⚙️ Действия</div>
+            <div class="border-t border-slate-100 pt-3 space-y-2">
+              <button id="penalty-calculate-button"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg">
+                ▶ Рассчитать
+              </button>
+              <button id="penalty-clear-button"
+                class="w-full border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium
+                       py-2.5 rounded-lg">
+                Очистить
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Правая колонка: Результат расчёта -->
+        <div class="bg-white rounded-xl border border-slate-200 p-5 flex flex-col h-full min-h-0 space-y-3">
+          <div class="shrink-0 flex items-center justify-between">
+            <div class="flex items-center gap-2 font-medium text-slate-700">📊 Результат расчёта</div>
+            <button id="penalty-copy-table-button"
+              class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm whitespace-nowrap">
+              📋 Копировать таблицу
+            </button>
+          </div>
+
+          <div id="penalty-cap-warning" class="shrink-0 text-xs text-amber-600"></div>
+
+          <div class="flex-1 min-h-0 overflow-auto custom-scroll">
+            <table id="penalty-result-table" class="w-full text-xs border-collapse">
+              <thead>
+                <tr class="text-center text-slate-500 border-b border-slate-200">
+                  <th class="py-1 px-2" rowspan="2">Месяц</th>
+                  <th class="py-1 px-2" rowspan="2">Начислено</th>
+                  <th class="py-1 px-2" rowspan="2">Долг</th>
+                  <th class="py-1 px-2" colspan="3">Период просрочки</th>
+                  <th class="py-1 px-2" rowspan="2">Формула</th>
+                  <th class="py-1 px-2" rowspan="2">Пени</th>
+                </tr>
+                <tr class="text-center text-slate-500 border-b border-slate-200">
+                  <th class="py-1 px-2">с</th>
+                  <th class="py-1 px-2">по</th>
+                  <th class="py-1 px-2">дней</th>
+                </tr>
+              </thead>
+              <tbody id="penalty-result-table-body"></tbody>
+            </table>
+          </div>
+
+          <div id="penalty-status-bar"
+            class="shrink-0 text-sm text-slate-400 bg-slate-50 rounded-lg px-3 py-2">
+            Введите данные и нажмите «Рассчитать»
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Панель: Калькулятор госпошлины -->
+    <section id="panel-duty" data-tab-panel class="hidden h-full">
+      <div class="grid grid-cols-1 lg:grid-cols-2 grid-rows-[1fr_auto] gap-5 h-full">
+
+        <!-- Левая колонка -->
+        <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3 flex flex-col">
+          <div class="flex items-center gap-2 font-medium text-slate-700">🏛 Стороны и сумма иска</div>
+          <div class="border-t border-slate-100 pt-3 space-y-3">
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Сумма иска, ₽</label>
+              <input type="text" id="duty-claim-amount" placeholder="Например: 1 250 000"
+                class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+              <div class="mt-1 text-xs text-slate-500">&nbsp;</div>
+              <div class="mt-1 text-xs text-slate-400">
+                Реквизиты плательщика и получателя (Казначейство) фиксированы.
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Ответчик</label>
+              <input type="text" id="duty-defendant-name" placeholder="ООО «Ответчик»"
+                class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Правая колонка -->
+        <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3 flex flex-col">
+          <div class="flex items-center gap-2 font-medium text-slate-700">🧾 Госпошлина</div>
+          <div class="border-t border-slate-100 pt-3 space-y-3">
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Госпошлина, ₽</label>
+              <input type="text" id="duty-amount-input" placeholder="—"
+                class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+              <div id="duty-amount-words" class="mt-1 text-xs text-slate-500"></div>
+              <div class="mt-1 text-xs text-slate-400">
+                Сумму можно поправить вручную или ввести без расчёта.
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Дата платежа</label>
+              <div id="duty-payment-date-slot"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Действия (во всю ширину, не растягивается) -->
+        <div class="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+          <div class="flex items-center gap-2 font-medium text-slate-700">⚙️ Действия</div>
+          <div class="border-t border-slate-100 pt-3 space-y-2">
+            <div class="flex gap-2">
+              <button id="duty-calculate-button"
+                class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg">
+                ▶ Рассчитать
+              </button>
+              <button id="duty-generate-pdf-button"
+                class="flex-1 bg-slate-700 hover:bg-slate-800 text-white font-medium py-2.5 rounded-lg">
+                📄 Сформировать PDF
+              </button>
+            </div>
+            <button id="duty-clear-button"
+              class="w-full border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium
+                     py-2.5 rounded-lg">
+              Очистить
+            </button>
+          </div>
+          <div id="duty-pdf-status" class="text-sm"></div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Модальное окно: результат долгой операции (успех/ошибка) -->
+  <div id="result-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-20">
+    <div class="bg-white rounded-2xl p-8 max-w-sm w-full text-center space-y-4">
+      <div id="result-modal-icon" class="mx-auto w-16 h-16 rounded-full flex items-center justify-center text-3xl"></div>
+      <div id="result-modal-title" class="text-lg font-semibold text-slate-800"></div>
+      <div id="result-modal-message" class="text-sm text-slate-500 whitespace-pre-line"></div>
+      <button id="result-modal-close-button"
+        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg">
+        Понятно
+      </button>
+    </div>
+  </div>
+
+  <!-- Модальное окно: настройка ключа DaData -->
+  <div id="dadata-key-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-10">
+    <div class="bg-white rounded-xl border border-slate-200 p-6 max-w-md w-full space-y-3">
+      <h3 class="font-semibold">Настройка ключа DaData</h3>
+      <p class="text-sm text-slate-600">
+        Для поиска реквизитов по ИНН нужен бесплатный ключ
+        <a href="https://dadata.ru" target="_blank" class="text-blue-600 hover:underline">dadata.ru</a>:
+      </p>
+      <ol class="text-sm text-slate-600 list-decimal list-inside space-y-1">
+        <li>Зарегистрируйтесь на dadata.ru</li>
+        <li>Откройте раздел «Личный кабинет → API-ключи»</li>
+        <li>Скопируйте «Ключ API» (Api-Key)</li>
+      </ol>
+      <input type="text" id="dadata-key-input" placeholder="API-ключ"
+        class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+      <div id="dadata-key-error" class="text-xs text-red-600"></div>
+      <div class="flex gap-2">
+        <button id="dadata-key-save-button"
+          class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg text-sm">
+          Сохранить и найти
+        </button>
+        <button id="dadata-key-cancel-button"
+          class="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm">
+          Отмена
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модальное окно: справка сортировщика -->
+  <div id="sorter-help-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-10">
+    <div class="bg-white rounded-xl border border-slate-200 p-6 max-w-lg w-full space-y-3">
+      <h3 class="font-semibold">Справка: Сортировщик документов</h3>
+      <p class="text-sm text-slate-600">
+        Сортировщик собирает пакеты «Счёт + Акт + УПД» из папки с PDF-файлами
+        по описанию счетов, вставленному из 1С.
+      </p>
+      <p class="text-sm text-slate-600">Формат описания одного счёта:</p>
+      <pre class="text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg p-3 whitespace-pre-wrap">Счет на оплату № 65625 от 24.06.2025 на сумму 40 480 рублей
+1. Акт приема-передачи № 206391 от 23.06.2025
+2. УПД № 107867 от 23.06.2025</pre>
+      <p class="text-sm text-slate-600">
+        Можно вставить описания сразу нескольких счетов подряд — каждый
+        начинается с новой строки «Счет на оплату № …».
+      </p>
+      <button id="sorter-help-close-button"
+        class="w-full bg-slate-100 hover:bg-slate-200 rounded-lg py-2 text-sm">
+        Закрыть
+      </button>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

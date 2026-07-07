@@ -1,0 +1,25 @@
+# Node
+node_modules/
+
+# Rust build output
+src-tauri/target/
+src-tauri/gen/
+
+# Собранный sidecar-бинарник (пересобирается через npm run build:sidecar)
+src-tauri/binaries/*.exe
+
+# Артефакты PyInstaller
+build-sidecar/
+dist-sidecar/
+
+# Собранный Tailwind CSS (пересобирается через npm run build:css)
+src/css/tailwind.css
+
+# Python
+__pycache__/
+*.pyc
+*.log
+
+# ОС/редактор
+.DS_Store
+Thumbs.db

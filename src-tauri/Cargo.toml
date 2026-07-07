@@ -1,0 +1,28 @@
+[package]
+name = "trivio-legal"
+version = "5.0.0"
+description = "Юридический инструментарий"
+authors = ["Trivio Legal Team"]
+edition = "2021"
+
+# Библиотечный крейт (lib.rs) отделён от бинарного (main.rs),
+# чтобы поддержать и десктоп, и потенциальную мобильную сборку.
+[lib]
+name = "trivio_legal_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-store = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+# По умолчанию Tauri включает собственный рендерер.
+custom-protocol = ["tauri/custom-protocol"]
