@@ -37,9 +37,8 @@ function activateTab(targetPanelId) {
 
   document.querySelectorAll("[data-tab-target]").forEach((button) => {
     const isActive = button.dataset.tabTarget === targetPanelId;
-    button.classList.toggle("border-blue-500", isActive);
-    button.classList.toggle("text-blue-600", isActive);
-    button.classList.toggle("border-transparent", !isActive);
-    button.classList.toggle("text-slate-500", !isActive);
+    // Цвет текста и анимированное подчёркивание задаются в CSS через класс
+    // .tab-active (см. .nav-tab в index.html) — здесь только переключаем его.
+    button.classList.toggle("tab-active", isActive);
   });
 }
