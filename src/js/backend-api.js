@@ -137,3 +137,36 @@ export async function requestDocumentSorting(sortingRequest, onProgress) {
 export async function requestPaymentOrderPdf(paymentOrderRequest) {
   return callBackendMethod("generate_payment_order_pdf", paymentOrderRequest);
 }
+
+/**
+ * Запрашивает у бэкенда генерацию досудебной претензии.
+ *
+ * Принимает объект запроса (реквизиты должника, номер/дата претензии,
+ * номер/дата договора, сумма долга, папка с реестром) и необязательный
+ * колбэк onProgress для живого лога. Возвращает пути к временным файлам
+ * (DOCX, PDF, опись) и сводку для скачивания.
+ */
+export async function requestClaimGeneration(claimRequest, onProgress) {
+  return callBackendMethod("generate_claim", claimRequest, onProgress);
+}
+
+/**
+ * Запрашивает у бэкенда подсчёт итогов из загруженного Excel со счетами.
+ *
+ * Принимает путь к файлу. Возвращает общую сумму и реквизиты договора
+ * (номер и дату) для автоподстановки в поля формы претензии.
+ */
+export async function requestClaimExcelSummary(excelPath) {
+  return callBackendMethod("summarize_claim_excel", { excel_path: excelPath });
+}
+
+/**
+ * Запрашивает у бэкенда сохранение готовой претензии в выбранное место.
+ *
+ * Принимает путь к временному файлу претензии, путь сохранения, путь к
+ * временной описи и безопасное имя должника. Возвращает список сохранённых
+ * файлов (претензия + опись рядом).
+ */
+export async function requestClaimExport(exportRequest) {
+  return callBackendMethod("export_claim_document", exportRequest);
+}

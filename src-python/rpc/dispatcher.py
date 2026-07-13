@@ -15,6 +15,11 @@ from logic.lawsuit_generator import generate_lawsuit_package
 from logic.document_sorter_service import sort_documents_into_packages
 from logic.payment_order_generator import generate_state_duty_payment_order
 from logic.penalty_excel_import import import_debts_and_payments_from_excel
+from logic.claim_generator import (
+    generate_claim_package,
+    summarize_invoices_excel,
+    export_claim_document,
+)
 
 
 def handle_calculate_state_duty(params: dict, report_progress) -> dict:
@@ -102,6 +107,37 @@ def handle_import_penalty_excel(params: dict, report_progress) -> dict:
     return import_debts_and_payments_from_excel(params["excel_path"])
 
 
+def handle_generate_claim(params: dict, report_progress) -> dict:
+    """
+    Обрабатывает запрос на генерацию досудебной претензии.
+
+    Передаёт весь запрос и функцию отправки прогресса в генератор претензии.
+    Возвращает пути к временным файлам (DOCX, PDF, опись) и сводку; ход работы
+    транслируется в реальном времени через report_progress.
+    """
+    return generate_claim_package(params, report_progress)
+
+
+def handle_summarize_claim_excel(params: dict, report_progress) -> dict:
+    """
+    Обрабатывает запрос на подсчёт итогов из загруженного Excel со счетами.
+
+    Извлекает путь к файлу и возвращает общую сумму и реквизиты договора
+    для автоподстановки в поля формы претензии.
+    """
+    return summarize_invoices_excel(params["excel_path"])
+
+
+def handle_export_claim_document(params: dict, report_progress) -> dict:
+    """
+    Обрабатывает запрос на сохранение готовой претензии в выбранное место.
+
+    Копирует временный файл претензии (DOCX или PDF) по указанному пути и
+    кладёт рядом опись. Возвращает список сохранённых файлов.
+    """
+    return export_claim_document(params)
+
+
 # Карта методов RPC: имя метода → функция-обработчик.
 # Добавление нового метода — это одна строка здесь плюс одна функция выше.
 METHOD_HANDLERS = {
@@ -112,6 +148,9 @@ METHOD_HANDLERS = {
     "sort_documents": handle_sort_documents,
     "generate_payment_order_pdf": handle_generate_payment_order_pdf,
     "import_penalty_excel": handle_import_penalty_excel,
+    "generate_claim": handle_generate_claim,
+    "summarize_claim_excel": handle_summarize_claim_excel,
+    "export_claim_document": handle_export_claim_document,
 }
 
 

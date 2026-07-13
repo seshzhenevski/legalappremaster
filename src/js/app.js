@@ -6,6 +6,7 @@
 
 import { initTabNavigation } from "./tab-navigation.js";
 import { initLawsuitTab } from "./tab-lawsuit.js";
+import { initClaimTab } from "./tab-claim.js";
 import { initSorterTab } from "./tab-sorter.js";
 import { initPenaltyTab } from "./tab-penalty.js";
 import { initStateDutyTab } from "./tab-state-duty.js";
@@ -22,6 +23,7 @@ function initApplication() {
   initDatePickers();
   initTabNavigation();
   initLawsuitTab();
+  initClaimTab();
   initSorterTab();
   initPenaltyTab();
   initStateDutyTab();

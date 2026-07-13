@@ -594,10 +594,16 @@ def _law_replace_paragraph_text(paragraph, new_text):
         r.text = ""
 
 
-def generate_opis_docx(path: str, defendant_name: str) -> Tuple[int, int]:
+def generate_opis_docx(
+    path: str, defendant_name: str, document_title: str = "Исковое заявление",
+) -> Tuple[int, int]:
     """Заполняет встроенный шаблон описи (форма ф.107): подставляет
     наименование ответчика и проставляет «1» в столбец «Кол-во предметов»
-    (строка предмета и строка итога), на обоих экземплярах формы."""
+    (строка предмета и строка итога), на обоих экземплярах формы.
+
+    document_title задаёт название вложения в описи: по умолчанию «Исковое
+    заявление» (для генератора иска), либо, например, «Досудебная претензия»
+    для генератора претензий."""
     if not _DOCX_OK:
         raise RuntimeError("Библиотека python-docx не установлена.")
 
@@ -612,7 +618,7 @@ def generate_opis_docx(path: str, defendant_name: str) -> Tuple[int, int]:
     for table in doc.tables:
         for p in _law_iter_table_paragraphs(table):
             if p.text == target_giti:
-                _law_replace_paragraph_text(p, f"Исковое заявление {defendant_name}")
+                _law_replace_paragraph_text(p, f"{document_title} {defendant_name}")
                 replaced_name += 1
             elif p.text.strip() in ("2 листа", "2"):
                 # «2 листа» — ячейка строки предмета; «2» — ячейка итогов.

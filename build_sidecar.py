@@ -47,7 +47,7 @@ def build_sidecar_executable() -> Path:
     Собирает main.py в один исполняемый файл через PyInstaller.
 
     Возвращает путь к собранному файлу в папке dist. Все зависимости
-    (docx, reportlab, openpyxl, pypdf, num2words) вшиваются внутрь.
+    (docx, reportlab, Pillow, openpyxl, pypdf, num2words) вшиваются внутрь.
     Флаг --paths указывает PyInstaller, где искать пакеты rpc, logic и
     legal_tools; --collect-submodules гарантирует, что все подмодули
     переиспользуемого ядра попадут в сборку.
@@ -61,6 +61,9 @@ def build_sidecar_executable() -> Path:
             "--collect-submodules", "legal_tools",
             "--collect-submodules", "logic",
             "--collect-submodules", "rpc",
+            # Pillow (PIL) нужен reportlab для вставки PNG-логотипа с прозрачностью
+            # в PDF претензии; reportlab импортирует его лениво, поэтому собираем явно.
+            "--collect-all", "PIL",
             "--distpath", str(PROJECT_ROOT / "dist-sidecar"),
             "--workpath", str(PROJECT_ROOT / "build-sidecar"),
             "--specpath", str(PROJECT_ROOT / "build-sidecar"),
