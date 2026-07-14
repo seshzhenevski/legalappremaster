@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+import re
+
 from legal_tools.core.formatting import normalize_quotes, strip_all_quotes
 
 
@@ -25,6 +27,23 @@ LEGAL_FORM_ABBREVIATIONS = {
     "ГОСУДАРСТВЕННОЕ УНИТАРНОЕ ПРЕДПРИЯТИЕ": "ГУП",
     "МУНИЦИПАЛЬНОЕ УНИТАРНОЕ ПРЕДПРИЯТИЕ": "МУП",
 }
+
+# Краткие ОПФ, которые DaData отдаёт в виде, отличном от принятого в документах.
+# «НАО» (непубличное акционерное общество) в наших документах пишется как «АО».
+LEGAL_FORM_SHORT_OVERRIDES = {
+    "НАО": "АО",
+}
+
+
+def normalize_legal_form(legal_form_short: str) -> str:
+    """
+    Приводит краткую ОПФ из DaData к виду, принятому в документах.
+
+    Принимает краткую форму («ООО», «НАО», «АО»). Заменяет «НАО» на «АО»;
+    остальные формы возвращает без изменений.
+    """
+    cleaned = (legal_form_short or "").strip()
+    return LEGAL_FORM_SHORT_OVERRIDES.get(cleaned.upper(), cleaned)
 
 
 def build_company_display_name(short_name: str, legal_form_short: str) -> str:
@@ -55,7 +74,7 @@ def extract_company_details_from_suggestion(suggestion: dict) -> dict:
     legal_form_block = company_data.get("opf", {}) or {}
 
     short_name = (name_block.get("short") or name_block.get("full") or "").strip()
-    legal_form_short = (legal_form_block.get("short") or "").strip()
+    legal_form_short = normalize_legal_form(legal_form_block.get("short"))
 
     display_name = build_company_display_name(short_name, legal_form_short)
     if not display_name:
@@ -64,7 +83,8 @@ def extract_company_details_from_suggestion(suggestion: dict) -> dict:
             or name_block.get("full_with_opf")
             or suggestion.get("value", "")
         )
-        display_name = normalize_quotes(fallback_name)
+        # В запасном варианте ОПФ уже вшита в строку — заменяем её там же.
+        display_name = re.sub(r"^НАО\b", "АО", normalize_quotes(fallback_name).strip())
 
     address_block = company_data.get("address") or {}
     return {

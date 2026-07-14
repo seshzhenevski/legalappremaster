@@ -19,6 +19,7 @@ from logic.claim_generator import (
     generate_claim_package,
     summarize_invoices_excel,
     export_claim_document,
+    find_claim_by_inn,
 )
 
 
@@ -128,6 +129,17 @@ def handle_summarize_claim_excel(params: dict, report_progress) -> dict:
     return summarize_invoices_excel(params["excel_path"])
 
 
+def handle_find_claim_by_inn(params: dict, report_progress) -> dict | None:
+    """
+    Обрабатывает запрос на поиск претензии должника по ИНН в реестре.
+
+    Извлекает ИНН (и необязательную папку реестра — по умолчанию берётся
+    сетевая папка из конфига) и возвращает номер и дату последней претензии
+    этого должника для автоподстановки в форму иска.
+    """
+    return find_claim_by_inn(params["inn"], params.get("registry_folder"))
+
+
 def handle_export_claim_document(params: dict, report_progress) -> dict:
     """
     Обрабатывает запрос на сохранение готовой претензии в выбранное место.
@@ -151,6 +163,7 @@ METHOD_HANDLERS = {
     "generate_claim": handle_generate_claim,
     "summarize_claim_excel": handle_summarize_claim_excel,
     "export_claim_document": handle_export_claim_document,
+    "find_claim_by_inn": handle_find_claim_by_inn,
 }
 
 

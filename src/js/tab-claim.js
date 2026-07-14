@@ -21,6 +21,13 @@ import { createDateField, setDateFieldValue } from "./date-picker.js";
 import { withButtonBusy } from "./loading-button.js";
 import { showResultModal } from "./result-modal.js";
 
+// Папка с реестром «ОТПРАВКИ ПРЕТЕНЗИЙ.xlsx» по умолчанию — общая сетевая папка
+// юридического департамента. Подставляется в поле при открытии и после очистки;
+// путь можно изменить вручную или кнопкой «Обзор». Тот же путь зашит в бэкенде
+// (CLAIM_REGISTRY_DEFAULT_FOLDER в legal_tools/config.py) — оттуда его берёт
+// вкладка иска, у которой поля пути нет.
+const DEFAULT_REGISTRY_FOLDER = "Z:\\ЮРИДИЧЕСКИЙ ДЕПАРТАМЕНТ\\ПДЗ";
+
 // Ключ DaData кешируется в памяти на время сессии (как во вкладке иска).
 let dadataApiKey = null;
 
@@ -70,6 +77,8 @@ export function initClaimTab() {
 
   registerExcelDropZone("claim-excel-drop-zone", (path) => applyExcelFile(path));
 
+  document.getElementById("claim-registry-path").value = DEFAULT_REGISTRY_FOLDER;
+
   document
     .getElementById("claim-date-slot")
     .appendChild(createDateField({ id: "claim-date", value: todayIso() }));
@@ -99,6 +108,8 @@ function clearClaimForm() {
   textFieldIds.forEach((id) => {
     document.getElementById(id).value = "";
   });
+  // Путь к реестру не «теряется» при очистке — возвращается к значению по умолчанию.
+  document.getElementById("claim-registry-path").value = DEFAULT_REGISTRY_FOLDER;
   setDateFieldValue("claim-date", todayIso());
   setDateFieldValue("claim-contract-date", "");
   resetGeneratedFiles();

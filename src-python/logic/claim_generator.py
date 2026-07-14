@@ -23,9 +23,9 @@ from decimal import Decimal
 from pathlib import Path
 from typing import List, Optional
 
-from legal_tools.config import CLAIM_REGISTRY_FILENAME
+from legal_tools.config import CLAIM_REGISTRY_FILENAME, CLAIM_REGISTRY_DEFAULT_FOLDER
 from legal_tools.core.formatting import (
-    parse_amount_cell, parse_contract_ref, sanitize_filename, fmt,
+    parse_amount_cell, parse_contract_ref, parse_date_cell, sanitize_filename, fmt,
 )
 from legal_tools.generators.claim_text import format_claim_number
 from legal_tools.generators.claim_docx import generate_claim_docx
@@ -56,19 +56,17 @@ def parse_iso_date(iso_date_string: Optional[str]) -> Optional[date]:
     return date(year, month, day)
 
 
-def resolve_registry_path(registry_folder: Optional[str]) -> Path:
+def resolve_registry_path(registry_folder: Optional[str] = None) -> Path:
     """
     Находит файл реестра «ОТПРАВКИ ПРЕТЕНЗИЙ.xlsx» по указанному пути.
 
     Принимает путь к папке (обычный случай) либо прямой путь к самому
-    xlsx-файлу. Возвращает путь к существующему файлу или бросает понятную
-    ошибку, если путь не задан или файл не найден.
+    xlsx-файлу. Если путь не задан — берёт папку по умолчанию из конфига
+    (общая сетевая папка юридического департамента). Возвращает путь к
+    существующему файлу или бросает понятную ошибку, если файл не найден
+    (в том числе когда сетевая папка недоступна).
     """
-    raw = (registry_folder or "").strip()
-    if not raw:
-        raise ValueError(
-            "Укажите папку, в которой лежит файл «" + CLAIM_REGISTRY_FILENAME + "»."
-        )
+    raw = (registry_folder or "").strip() or CLAIM_REGISTRY_DEFAULT_FOLDER
     candidate = Path(raw)
     if candidate.is_file():
         return candidate
@@ -172,6 +170,87 @@ def peek_next_claim_number(registry_path: Path) -> int:
         if match:
             last_number = int(match.group())
     return last_number + 1
+
+
+# Дата внутри «старого» формата столбца 3: «№55 от 15.04.2026».
+_DATE_IN_NUMBER_RE = re.compile(r"от\s+(\d{1,2}\.\d{1,2}\.\d{2,4})", re.IGNORECASE)
+
+
+def _cell_digits(cell) -> str:
+    """Оставляет от значения ячейки только цифры (ИНН может лежать и числом)."""
+    if cell is None:
+        return ""
+    if isinstance(cell, float) and cell.is_integer():
+        cell = int(cell)
+    return re.sub(r"\D", "", str(cell))
+
+
+def _registry_number(number_cell) -> str:
+    """
+    Достаёт номер претензии из столбца 3 в любом из встречающихся форматов.
+
+    В файле исторически лежат разные варианты: число (60), «№55 от 15.04.2026»
+    и новый «№57». Во всех случаях возвращает голый номер («60», «55», «57»).
+    """
+    if number_cell in (None, ""):
+        return ""
+    match = re.search(r"\d+", str(number_cell))
+    return match.group() if match else ""
+
+
+def _registry_date_iso(date_cell, number_cell) -> str:
+    """
+    Достаёт дату претензии в ISO из столбца 4, а если он пуст — из столбца 3.
+
+    В новых строках дата лежит в столбце 4, в старых — зашита в текст номера
+    («№55 от 15.04.2026»). Возвращает «» , если дату распознать не удалось.
+    """
+    parsed = parse_date_cell(date_cell)
+    if parsed is not None:
+        return parsed.isoformat()
+    if number_cell not in (None, ""):
+        match = _DATE_IN_NUMBER_RE.search(str(number_cell))
+        if match:
+            parsed = parse_date_cell(match.group(1))
+            if parsed is not None:
+                return parsed.isoformat()
+    return ""
+
+
+def find_claim_by_inn(inn: str, registry_folder: Optional[str] = None) -> Optional[dict]:
+    """
+    Ищет в реестре последнюю претензию должника по ИНН.
+
+    Сравнивает ИНН со столбцом 2 реестра (по цифрам, чтобы не зависеть от того,
+    записан он текстом или числом) и возвращает номер и дату (ISO) ПОСЛЕДНЕЙ
+    подходящей строки — именно эта претензия предшествует иску. Возвращает None,
+    если строк с таким ИНН нет.
+
+    Внимание: в исторических строках столбец ИНН не заполнялся, поэтому находятся
+    только те претензии, у которых ИНН проставлен (сформированные программой либо
+    заполненные вручную).
+    """
+    digits = _cell_digits(inn)
+    if not digits:
+        return None
+
+    _require_openpyxl()
+    registry_path = resolve_registry_path(registry_folder)
+    workbook = openpyxl.load_workbook(registry_path, data_only=True)
+    worksheet = workbook.active
+
+    found: Optional[dict] = None
+    for _index, row in _iter_data_rows(worksheet):
+        inn_cell = row[1] if len(row) > 1 else None
+        if _cell_digits(inn_cell) != digits:
+            continue
+        number_cell = row[2] if len(row) > 2 else None
+        date_cell = row[3] if len(row) > 3 else None
+        found = {
+            "number": _registry_number(number_cell),
+            "date": _registry_date_iso(date_cell, number_cell),
+        }
+    return found
 
 
 def append_registry_row(

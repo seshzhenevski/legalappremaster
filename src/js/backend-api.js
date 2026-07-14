@@ -170,3 +170,14 @@ export async function requestClaimExcelSummary(excelPath) {
 export async function requestClaimExport(exportRequest) {
   return callBackendMethod("export_claim_document", exportRequest);
 }
+
+/**
+ * Запрашивает у бэкенда претензию должника по ИНН из реестра.
+ *
+ * Принимает ИНН. Путь к реестру не передаётся — бэкенд берёт папку по
+ * умолчанию из конфига. Возвращает номер и дату (ISO) последней претензии
+ * этого должника или null, если строк с таким ИНН в реестре нет.
+ */
+export async function requestClaimByInn(inn) {
+  return callBackendMethod("find_claim_by_inn", { inn: inn });
+}

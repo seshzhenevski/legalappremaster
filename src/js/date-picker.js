@@ -2,10 +2,15 @@
 // Кастомный минималистичный календарь взамен нативного input[type="date"].
 //
 // Каждое поле даты — пара инпутов: скрытый <input type="hidden"> хранит
-// ISO-значение (ГГГГ-ММ-ДД), видимый текстовый инпут (readonly) показывает
-// дату в формате ДД.ММ.ГГГГ и открывает один общий на всё приложение
-// всплывающий календарь. createDateField() возвращает готовый DOM-узел —
-// вкладки вставляют его в разметку вместо прежнего <input type="date">.
+// ISO-значение (ГГГГ-ММ-ДД), видимый текстовый инпут показывает дату в формате
+// ДД.ММ.ГГГГ и открывает один общий на всё приложение всплывающий календарь.
+// createDateField() возвращает готовый DOM-узел — вкладки вставляют его в
+// разметку вместо прежнего <input type="date">.
+//
+// Дату можно задать тремя способами: выбрать в календаре, вставить из буфера
+// или набрать вручную. Ручной ввод разбирается по потере фокуса и по Enter —
+// понимаются форматы ДД.ММ.ГГГГ, ДД.ММ.ГГ, ДД/ММ/ГГГГ, ДД-ММ-ГГГГ, ГГГГ-ММ-ДД
+// и сплошные цифры (13072026).
 
 const MONTH_NAMES = [
   "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
@@ -69,9 +74,9 @@ export function createDateField({ id = "", extraHiddenClass = "", value = "", co
   const paddingClass = compact ? "px-2 py-1.5" : "px-3 py-2";
   wrapper.innerHTML = `
     <input type="hidden" ${id ? `id="${id}"` : ""} class="${extraHiddenClass}" value="${value}" />
-    <input type="text" readonly placeholder="дд.мм.гггг"
+    <input type="text" placeholder="дд.мм.гггг" autocomplete="off"
       class="date-field-display w-full ${paddingClass} border border-slate-300 rounded-lg
-             text-sm cursor-pointer bg-white hover:border-slate-400" />
+             text-sm bg-white hover:border-slate-400" />
   `;
 
   const hiddenInput = wrapper.querySelector("input[type=hidden]");
@@ -80,6 +85,19 @@ export function createDateField({ id = "", extraHiddenClass = "", value = "", co
 
   displayInput.addEventListener("click", () => {
     openPopup(hiddenInput, displayInput);
+  });
+
+  // Ручной ввод: применяем набранное по потере фокуса и по Enter.
+  displayInput.addEventListener("blur", () => {
+    commitTypedValue(hiddenInput, displayInput);
+  });
+
+  displayInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitTypedValue(hiddenInput, displayInput);
+      closePopup();
+    }
   });
 
   displayInput.addEventListener("paste", (event) => {
@@ -99,12 +117,41 @@ export function createDateField({ id = "", extraHiddenClass = "", value = "", co
 }
 
 /**
- * Разбирает дату из вставленного текста в разных распространённых форматах.
+ * Применяет значение, набранное в поле даты вручную.
  *
- * Принимает произвольный текст из буфера обмена (например, скопированный
- * из Excel, документа или другого поля приложения). Понимает форматы
- * ДД.ММ.ГГГГ, ДД.ММ.ГГ, ДД/ММ/ГГГГ и ГГГГ-ММ-ДД. Возвращает ISO-строку
- * (ГГГГ-ММ-ДД) или null, если формат не распознан.
+ * Разбирает текст из видимого инпута и записывает ISO-значение в скрытый, а в
+ * видимый — нормализованный формат ДД.ММ.ГГГГ. Пустое поле очищает дату.
+ * Нераспознанный текст не применяется: поле возвращается к прежнему значению,
+ * чтобы в нём не оставался мусор, а сохранённая дата не терялась.
+ */
+function commitTypedValue(hiddenInput, displayInput) {
+  const typedText = displayInput.value.trim();
+
+  if (!typedText) {
+    hiddenInput.value = "";
+    hiddenInput.dispatchEvent(new Event("change"));
+    displayInput.value = "";
+    return;
+  }
+
+  const iso = parseFlexibleDateString(typedText);
+  if (!iso) {
+    displayInput.value = formatIsoToDisplay(hiddenInput.value);
+    return;
+  }
+
+  hiddenInput.value = iso;
+  hiddenInput.dispatchEvent(new Event("change"));
+  displayInput.value = formatIsoToDisplay(iso);
+}
+
+/**
+ * Разбирает дату из произвольного текста в разных распространённых форматах.
+ *
+ * Принимает текст, набранный вручную или вставленный из буфера (например,
+ * скопированный из Excel или документа). Понимает форматы ДД.ММ.ГГГГ, ДД.ММ.ГГ,
+ * ДД/ММ/ГГГГ, ДД-ММ-ГГГГ, ГГГГ-ММ-ДД и сплошные цифры (13072026). Возвращает
+ * ISO-строку (ГГГГ-ММ-ДД) или null, если формат не распознан.
  */
 function parseFlexibleDateString(text) {
   const trimmed = (text || "").trim();
@@ -115,11 +162,18 @@ function parseFlexibleDateString(text) {
     return buildIsoIfValid(Number(year), Number(month), Number(day));
   }
 
-  const dottedOrSlashMatch = trimmed.match(/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{2,4})$/);
+  const dottedOrSlashMatch = trimmed.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})$/);
   if (dottedOrSlashMatch) {
     const [, day, month, yearRaw] = dottedOrSlashMatch;
     const year = yearRaw.length === 2 ? Number(yearRaw) + 2000 : Number(yearRaw);
     return buildIsoIfValid(year, Number(month), Number(day));
+  }
+
+  // Набор одними цифрами, без разделителей: 13072026 → 13.07.2026.
+  const compactMatch = trimmed.match(/^(\d{2})(\d{2})(\d{4})$/);
+  if (compactMatch) {
+    const [, day, month, year] = compactMatch;
+    return buildIsoIfValid(Number(year), Number(month), Number(day));
   }
 
   return null;

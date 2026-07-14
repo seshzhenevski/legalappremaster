@@ -7,6 +7,7 @@
 import {
   requestLawsuitGeneration,
   requestCompanyLookup,
+  requestClaimByInn,
 } from "./backend-api.js";
 import { selectExcelFile, selectDirectory } from "./file-dialogs.js";
 import { isValidInn } from "./formatting.js";
@@ -48,6 +49,11 @@ export function initLawsuitTab() {
   document
     .getElementById("lawsuit-clear-log-button")
     .addEventListener("click", clearLawsuitLog);
+
+  // Ввод ИНН вручную (без нажатия «Найти») тоже подтягивает претензию из реестра.
+  document
+    .getElementById("lawsuit-defendant-inn")
+    .addEventListener("change", fillPretenziaFromRegistry);
 
   registerExcelDropZone("lawsuit-excel-drop-zone", (path) => {
     document.getElementById("lawsuit-excel-path").value = path;
@@ -123,7 +129,56 @@ async function handleInnSearch() {
   }
 
   const button = document.getElementById("lawsuit-inn-search-button");
-  await withButtonBusy(button, "Поиск…", () => performCompanyLookup(inn, dadataApiKey));
+  await withButtonBusy(button, "Поиск…", async () => {
+    await performCompanyLookup(inn, dadataApiKey);
+    await fillPretenziaFromRegistry();
+  });
+}
+
+/**
+ * Подтягивает номер и дату претензии по ИНН из реестра «ОТПРАВКИ ПРЕТЕНЗИЙ.xlsx».
+ *
+ * Ищет последнюю претензию этого должника и подставляет её номер и дату в поля
+ * карточки «Претензия». Значения остаются обычными полями — пользователь может
+ * скорректировать их вручную. Если претензия не найдена или реестр недоступен
+ * (например, нет доступа к сетевой папке), поля НЕ трогаются: пишется только
+ * строка в лог, чтобы не затирать уже введённые вручную данные.
+ */
+async function fillPretenziaFromRegistry() {
+  const inn = document.getElementById("lawsuit-defendant-inn").value.trim();
+  if (!isValidInn(inn)) {
+    return;
+  }
+
+  try {
+    const claim = await requestClaimByInn(inn);
+    if (!claim || (!claim.number && !claim.date)) {
+      appendLawsuitLogLine("ℹ Претензия по этому ИНН в реестре не найдена — заполните поля вручную.");
+      return;
+    }
+    if (claim.number) {
+      document.getElementById("lawsuit-pretenzia-number").value = claim.number;
+    }
+    if (claim.date) {
+      setDateFieldValue("lawsuit-pretenzia-date", claim.date);
+    }
+    appendLawsuitLogLine(
+      `✅ Претензия из реестра: № ${claim.number || "—"} от ${formatIsoForLog(claim.date)}.`,
+    );
+  } catch (error) {
+    appendLawsuitLogLine(`⚠ Реестр претензий недоступен: ${error.message}`);
+  }
+}
+
+/**
+ * Форматирует ISO-дату (ГГГГ-ММ-ДД) в ДД.ММ.ГГГГ для строки лога.
+ */
+function formatIsoForLog(isoDate) {
+  if (!isoDate) {
+    return "—";
+  }
+  const [year, month, day] = isoDate.split("-");
+  return `${day}.${month}.${year}`;
 }
 
 /**

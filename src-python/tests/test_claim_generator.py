@@ -10,9 +10,14 @@ import tempfile
 import unittest
 from datetime import date
 from decimal import Decimal
+from unittest import mock
 
 import openpyxl
 
+from legal_tools.config import (
+    CLAIM_REGISTRY_DEFAULT_FOLDER,
+    CLAIM_REGISTRY_FILENAME,
+)
 from logic.claim_generator import (
     parse_iso_date,
     resolve_registry_path,
@@ -21,6 +26,7 @@ from logic.claim_generator import (
     append_registry_row,
     generate_claim_package,
     export_claim_document,
+    find_claim_by_inn,
 )
 from legal_tools.generators.claim_text import (
     format_claim_number,
@@ -89,9 +95,59 @@ class RegistryFileTests(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             resolve_registry_path(empty_dir)
 
-    def test_resolve_registry_path_empty_raises(self):
-        with self.assertRaises(ValueError):
-            resolve_registry_path("")
+    def test_resolve_registry_path_empty_falls_back_to_default(self):
+        """Пустой путь — не ошибка: берётся папка по умолчанию из конфига."""
+        expected = Path(CLAIM_REGISTRY_DEFAULT_FOLDER) / CLAIM_REGISTRY_FILENAME
+        with mock.patch.object(Path, "is_file", return_value=False), \
+             mock.patch.object(Path, "exists", return_value=True):
+            self.assertEqual(resolve_registry_path(""), expected)
+            self.assertEqual(resolve_registry_path(None), expected)
+
+    def test_find_claim_by_inn_reads_date_from_number_cell(self):
+        """Историческая строка: даты в столбце 4 нет — берётся из «№55 от 15.04.2026»."""
+        self._append(["ООО «Старый»", "7712345678", "№55 от 15.04.2026", None, 1000])
+        self.assertEqual(
+            find_claim_by_inn("7712345678", self.temp_dir),
+            {"number": "55", "date": "2026-04-15"},
+        )
+
+    def test_find_claim_by_inn_reads_separate_date_column(self):
+        """Строка, созданная программой: номер в столбце 3, дата — в столбце 4."""
+        self._append(["ООО «Новый»", "7701234567", "№57", "13.07.2026", 2000])
+        self.assertEqual(
+            find_claim_by_inn("7701234567", self.temp_dir),
+            {"number": "57", "date": "2026-07-13"},
+        )
+
+    def test_find_claim_by_inn_handles_numeric_cells_and_dirty_inn(self):
+        """ИНН может лежать числом, а на входе — с пробелами/дефисами."""
+        self._append(["ООО «Числом»", 7799999999, 60, None, 3000])
+        self.assertEqual(
+            find_claim_by_inn("77-999 999 99", self.temp_dir),
+            {"number": "60", "date": ""},
+        )
+
+    def test_find_claim_by_inn_returns_last_match(self):
+        """У должника несколько претензий — берётся последняя (она предшествует иску)."""
+        self._append(["ООО «Дубль»", "7712345678", "№55 от 15.04.2026", None, 1000])
+        self._append(["ООО «Дубль»", "7712345678", "№99", "01.02.2027", 5000])
+        self.assertEqual(
+            find_claim_by_inn("7712345678", self.temp_dir),
+            {"number": "99", "date": "2027-02-01"},
+        )
+
+    def test_find_claim_by_inn_ignores_rows_without_inn(self):
+        """Исторические строки без ИНН (и строка-дубль заголовка) не находятся."""
+        self._append(["ООО «Без ИНН»", None, "№58 от 01.01.2026", None, 1000])
+        self._append(["КОНТРАГЕНТ", "ИНН", "№ претензии", "Дата претензии", None])
+        self.assertIsNone(find_claim_by_inn("7712345678", self.temp_dir))
+        self.assertIsNone(find_claim_by_inn("", self.temp_dir))
+
+    def _append(self, row):
+        """Дописывает строку в тестовый реестр."""
+        workbook = openpyxl.load_workbook(self.registry_path)
+        workbook.active.append(row)
+        workbook.save(self.registry_path)
 
     def test_next_number_follows_last_row_not_global_max(self):
         """Следующий номер = последняя строка (56) + 1, а не глобальный макс (78)."""
