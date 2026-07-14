@@ -7,7 +7,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import os
 import tempfile
+import time
 import unittest
+from concurrent import futures
 from datetime import date
 from decimal import Decimal
 from unittest import mock
@@ -27,6 +29,7 @@ from logic.claim_generator import (
     generate_claim_package,
     export_claim_document,
     find_claim_by_inn,
+    registry_lock,
 )
 from legal_tools.generators.claim_text import (
     format_claim_number,
@@ -148,6 +151,71 @@ class RegistryFileTests(unittest.TestCase):
         workbook = openpyxl.load_workbook(self.registry_path)
         workbook.active.append(row)
         workbook.save(self.registry_path)
+
+    # ── Одновременная работа нескольких пользователей (реестр в общей папке) ──
+
+    def test_registry_lock_is_exclusive(self):
+        """Пока замок держат, второй захват честно истекает по таймауту."""
+        with registry_lock(self.registry_path):
+            with self.assertRaises(TimeoutError):
+                with registry_lock(self.registry_path, wait_seconds=0.5):
+                    pass
+
+    def test_registry_lock_is_released_after_use(self):
+        """После выхода из блока замок снят — следующий захват проходит сразу."""
+        with registry_lock(self.registry_path):
+            pass
+        with registry_lock(self.registry_path, wait_seconds=0.5):
+            pass
+
+    def test_stale_lock_is_stolen(self):
+        """Брошенный замок (программа упала) не блокирует остальных навсегда."""
+        lock_path = self.registry_path.with_name(self.registry_path.name + ".lock")
+        lock_path.write_text("упавший процесс", encoding="utf-8")
+        long_ago = time.time() - 10_000
+        os.utime(lock_path, (long_ago, long_ago))
+
+        with registry_lock(self.registry_path, wait_seconds=0.5):
+            pass
+
+    def test_concurrent_writers_keep_numbers_unique_and_lose_no_rows(self):
+        """
+        Несколько пользователей жмут «Сгенерировать» одновременно.
+
+        Без замка они получали один и тот же номер и затирали строки друг друга
+        (реестр перезаписывается целиком). Под замком номера обязаны быть
+        уникальными, а все строки — оказаться в файле.
+        """
+        workers = 5
+
+        def reserve_and_write(worker):
+            with registry_lock(self.registry_path):
+                number = peek_next_claim_number(self.registry_path)
+                append_registry_row(
+                    self.registry_path, name=f"ООО «Должник-{worker}»",
+                    inn=f"770000000{worker}", number_cell=f"№{number}",
+                    claim_date=date(2026, 7, 14), amount=Decimal("1000"),
+                )
+                return number
+
+        with futures.ThreadPoolExecutor(max_workers=workers) as pool:
+            numbers = list(pool.map(reserve_and_write, range(workers)))
+
+        self.assertEqual(len(set(numbers)), workers, "номера претензий задвоились")
+
+        sheet = openpyxl.load_workbook(self.registry_path, data_only=True).active
+        written = [row[2] for row in sheet.iter_rows(min_row=2, values_only=True)
+                   if row[2] not in (None, "")]
+        for number in numbers:
+            self.assertIn(f"№{number}", written, "строка потеряна при одновременной записи")
+
+    def test_atomic_save_leaves_no_temp_file(self):
+        """Временный файл замены не остаётся в папке реестра."""
+        append_registry_row(
+            self.registry_path, name="ООО «Тест»", inn="7701234567",
+            number_cell="№57", claim_date=date(2026, 7, 13), amount=Decimal("1000"),
+        )
+        self.assertEqual(list(Path(self.temp_dir).glob("~*.tmp*")), [])
 
     def test_next_number_follows_last_row_not_global_max(self):
         """Следующий номер = последняя строка (56) + 1, а не глобальный макс (78)."""

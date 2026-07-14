@@ -10,15 +10,23 @@
 пути к временным файлам возвращаются интерфейсу и приходят обратно на шаге
 скачивания.
 
+Реестр лежит в общей сетевой папке, поэтому запись в него защищена от
+одновременной работы нескольких пользователей: см. registry_lock (файловый
+замок рядом с реестром) и _save_workbook_atomically (сохранение через
+временный файл с атомарной заменой).
+
 Ничего не знает об интерфейсе, кроме функции report_progress (как и
 lawsuit_generator / document_sorter_service).
 """
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import tempfile
-from datetime import date
+import time
+from contextlib import contextmanager
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import List, Optional
@@ -40,6 +48,148 @@ except Exception:
 
 BANNER = "=" * 50
 _TEMP_SUBDIR = "trivio_claim"
+
+# Файловый замок рядом с реестром: реестр лежит в общей сетевой папке, и без
+# замка двое пользователей, нажавших «Сгенерировать» одновременно, получили бы
+# один и тот же номер претензии и затёрли строку друг друга (openpyxl
+# перезаписывает файл целиком).
+_LOCK_SUFFIX = ".lock"
+_LOCK_WAIT_SECONDS = 60.0     # сколько ждём, пока коллега допишет свою строку
+_LOCK_STALE_SECONDS = 300.0   # после этого замок считаем брошенным (программа упала)
+_LOCK_POLL_SECONDS = 0.3
+
+# Повторы атомарной замены файла: закрывают миллисекундные пересечения с теми,
+# кто в этот момент читает реестр (см. _save_workbook_atomically).
+_REPLACE_ATTEMPTS = 5
+_REPLACE_RETRY_SECONDS = 0.2
+
+
+def _lock_stamp() -> str:
+    """Строка-визитка, которая пишется внутрь замка (кто и когда его взял)."""
+    user = os.environ.get("USERNAME") or "неизвестный пользователь"
+    host = os.environ.get("COMPUTERNAME") or "неизвестный компьютер"
+    return f"{user}@{host} pid={os.getpid()} {datetime.now():%d.%m.%Y %H:%M:%S}"
+
+
+def _lock_owner(lock_path: Path) -> str:
+    """Читает визитку из замка — чтобы показать, кто держит реестр."""
+    try:
+        owner = lock_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+    return owner
+
+
+def _lock_is_stale(lock_path: Path) -> bool:
+    """
+    Проверяет, не брошен ли замок.
+
+    Если программа упала или потеряла сеть, файл замка останется навсегда и
+    заблокирует всех. Поэтому замок старше _LOCK_STALE_SECONDS считается
+    брошенным и снимается: наш критический участок занимает считаные секунды,
+    так что живой замок такого возраста быть не может.
+    """
+    try:
+        age = time.time() - lock_path.stat().st_mtime
+    except OSError:
+        return False
+    return age > _LOCK_STALE_SECONDS
+
+
+def _release_lock(lock_path: Path) -> None:
+    """Снимает замок, молча переживая его отсутствие."""
+    try:
+        lock_path.unlink()
+    except OSError:
+        pass
+
+
+@contextmanager
+def registry_lock(registry_path: Path, wait_seconds: float = _LOCK_WAIT_SECONDS):
+    """
+    Захватывает файловый замок рядом с реестром на время его чтения и записи.
+
+    Замок — это файл «<реестр>.lock», создаваемый атомарно (O_CREAT|O_EXCL):
+    на сетевой папке SMB такое создание атомарно, поэтому его выигрывает ровно
+    один пользователь. Остальные ждут освобождения до wait_seconds, после чего
+    получают понятную ошибку с именем того, кто держит реестр. Брошенный замок
+    (см. _lock_is_stale) снимается автоматически.
+
+    Замком накрывается весь участок «узнать номер → сформировать документы →
+    дописать строку», иначе двое могли бы получить один номер.
+    """
+    lock_path = registry_path.with_name(registry_path.name + _LOCK_SUFFIX)
+    deadline = time.monotonic() + wait_seconds
+
+    while True:
+        try:
+            handle = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            break
+        except FileExistsError:
+            if _lock_is_stale(lock_path):
+                _release_lock(lock_path)
+                continue
+            if time.monotonic() >= deadline:
+                owner = _lock_owner(lock_path)
+                raise TimeoutError(
+                    "Реестр претензий сейчас занят другим пользователем — "
+                    "он формирует свою претензию.\n"
+                    + (f"Занял: {owner}\n\n" if owner else "\n")
+                    + "Подождите несколько секунд и повторите."
+                )
+            time.sleep(_LOCK_POLL_SECONDS)
+        except OSError as error:
+            raise OSError(
+                "Не удалось обратиться к папке с реестром претензий:\n"
+                f"{registry_path.parent}\n\n"
+                "Проверьте доступ к сетевой папке.\n"
+                f"({error})"
+            )
+
+    try:
+        os.write(handle, _lock_stamp().encode("utf-8"))
+    finally:
+        os.close(handle)
+
+    try:
+        yield
+    finally:
+        _release_lock(lock_path)
+
+
+def _save_workbook_atomically(workbook, registry_path: Path) -> None:
+    """
+    Сохраняет книгу через временный файл с атомарной заменой.
+
+    openpyxl перезаписывает файл целиком, поэтому обрыв сети посреди сохранения
+    мог бы оставить реестр обрезанным или битым. Пишем во временный файл в той
+    же папке (та же файловая система) и подменяем им оригинал одной операцией
+    os.replace: читатели увидят либо старый файл, либо новый, но никогда —
+    наполовину записанный.
+
+    Замену повторяем несколько раз: на Windows она падает, если файл в этот
+    момент открыт кем-то ещё, а реестр постоянно читают (вкладка иска ищет по
+    ИНН при каждом вводе). Такие пересечения длятся миллисекунды, поэтому пара
+    повторов их полностью закрывает; если файл держат по-настоящему (открыт в
+    Excel), сообщаем об этом понятным текстом.
+    """
+    temp_path = registry_path.with_name(f"~{registry_path.stem}.tmp{registry_path.suffix}")
+    try:
+        workbook.save(temp_path)
+        for attempt in range(_REPLACE_ATTEMPTS):
+            try:
+                os.replace(temp_path, registry_path)
+                return
+            except PermissionError:
+                if attempt == _REPLACE_ATTEMPTS - 1:
+                    raise PermissionError(_locked_message(registry_path.name))
+                time.sleep(_REPLACE_RETRY_SECONDS)
+    finally:
+        # После успешной замены временного файла уже нет; после ошибки — убираем.
+        try:
+            temp_path.unlink()
+        except OSError:
+            pass
 
 
 def parse_iso_date(iso_date_string: Optional[str]) -> Optional[date]:
@@ -264,6 +414,9 @@ def append_registry_row(
     4 — дата претензии (ДД.ММ.ГГГГ), 5 — сумма долга (число). Столбец 6
     (идентификатор отправления) не трогается. Возвращает индекс строки.
     Бросает понятную ошибку, если файл открыт в Excel.
+
+    Вызывается под registry_lock (см. generate_claim_package) и сохраняет файл
+    атомарно — поэтому строки пользователей не затирают друг друга.
     """
     _require_openpyxl()
     try:
@@ -284,10 +437,7 @@ def append_registry_row(
     worksheet.cell(row=target_row, column=4, value=claim_date.strftime("%d.%m.%Y"))
     worksheet.cell(row=target_row, column=5, value=float(amount))
 
-    try:
-        workbook.save(registry_path)
-    except PermissionError:
-        raise PermissionError(_locked_message(registry_path.name))
+    _save_workbook_atomically(workbook, registry_path)
     return target_row
 
 
@@ -340,28 +490,6 @@ def generate_claim_package(request: dict, report_progress=None) -> dict:
     report_progress(BANNER)
     report_progress("")
 
-    manual_number = format_claim_number(request.get("claim_number", ""))
-    if manual_number:
-        claim_number = manual_number
-        report_progress(f"📌 Номер претензии (введён вручную): № {claim_number}", percent=10)
-    else:
-        next_number = peek_next_claim_number(registry_path)
-        claim_number = str(next_number)
-        report_progress(
-            f"📌 Номер претензии сформирован автоматически: № {claim_number}",
-            percent=10,
-        )
-    number_cell = f"№{claim_number}"
-
-    context = {
-        "defendant_name": name,
-        "defendant_address": (defendant.get("address") or "").strip(),
-        "claim_number": claim_number,
-        "claim_date": claim_date,
-        "contract_number": contract_number,
-        "contract_date": contract_date,
-        "debt_amount": debt_amount,
-    }
     report_progress(f"Должник: {name}")
     report_progress(f"Сумма долга: {fmt(debt_amount)} руб.")
     if contract_number:
@@ -369,6 +497,75 @@ def generate_claim_package(request: dict, report_progress=None) -> dict:
                         + (f" от {contract_date:%d.%m.%Y}" if contract_date else ""))
     report_progress("")
 
+    # Весь участок «узнать номер → сформировать документы → дописать строку»
+    # идёт под одним замком. Если разжать замок между получением номера и
+    # записью, двое пользователей успеют взять один и тот же номер и затрут
+    # строки друг друга: реестр лежит в общей сетевой папке. Документы делаются
+    # внутри замка (это пара секунд), зато номер в письме гарантированно тот же,
+    # что уехал в реестр, а при сбое генерации в реестре не остаётся пустышки.
+    report_progress("🔒 Ожидание доступа к реестру...", percent=5)
+    with registry_lock(registry_path):
+        claim_number = _resolve_claim_number(request, registry_path, report_progress)
+
+        context = {
+            "defendant_name": name,
+            "defendant_address": (defendant.get("address") or "").strip(),
+            "claim_number": claim_number,
+            "claim_date": claim_date,
+            "contract_number": contract_number,
+            "contract_date": contract_date,
+            "debt_amount": debt_amount,
+        }
+        files = _generate_documents(context, name, report_progress)
+
+        report_progress("🧾 Запись в реестр «ОТПРАВКИ ПРЕТЕНЗИЙ.xlsx»...", percent=92)
+        row_index = append_registry_row(
+            registry_path, name=name, inn=(defendant.get("inn") or "").strip(),
+            number_cell=f"№{claim_number}", claim_date=claim_date, amount=debt_amount,
+        )
+        report_progress(f"✓ Строка {row_index}: № {claim_number}, {claim_date:%d.%m.%Y}, "
+                        f"{fmt(debt_amount)} руб.")
+        report_progress("")
+
+    report_progress(BANNER, percent=100)
+    report_progress("✅ ГОТОВО — можно скачивать DOCX или PDF")
+    report_progress(BANNER)
+
+    return {
+        **files,
+        "claim_number": claim_number,
+        "claim_date": claim_date.strftime("%d.%m.%Y"),
+        "total_debt": fmt(debt_amount),
+        "registry_row": row_index,
+    }
+
+
+def _resolve_claim_number(request: dict, registry_path: Path, report_progress) -> str:
+    """
+    Определяет номер претензии: введённый вручную либо следующий по реестру.
+
+    Вызывается под registry_lock, поэтому автоматический номер не может
+    достаться одновременно двум пользователям.
+    """
+    manual_number = format_claim_number(request.get("claim_number", ""))
+    if manual_number:
+        report_progress(f"📌 Номер претензии (введён вручную): № {manual_number}", percent=10)
+        return manual_number
+
+    next_number = str(peek_next_claim_number(registry_path))
+    report_progress(
+        f"📌 Номер претензии сформирован автоматически: № {next_number}", percent=10,
+    )
+    return next_number
+
+
+def _generate_documents(context: dict, name: str, report_progress) -> dict:
+    """
+    Формирует три файла претензии во временной папке.
+
+    Возвращает пути к претензии (DOCX и PDF с факсимиле) и описи, а также
+    безопасное имя должника — оно нужно для имён файлов при скачивании.
+    """
     temp_dir = _prepare_temp_dir()
     safe_name = sanitize_filename(name, "Должник")
     docx_path = temp_dir / f"Досудебная претензия ({safe_name}).docx"
@@ -388,28 +585,11 @@ def generate_claim_package(request: dict, report_progress=None) -> dict:
     report_progress(f"✓ {opis_path.name}")
     report_progress("")
 
-    report_progress("🧾 Запись в реестр «ОТПРАВКИ ПРЕТЕНЗИЙ.xlsx»...", percent=92)
-    row_index = append_registry_row(
-        registry_path, name=name, inn=(defendant.get("inn") or "").strip(),
-        number_cell=number_cell, claim_date=claim_date, amount=debt_amount,
-    )
-    report_progress(f"✓ Строка {row_index}: № {claim_number}, {claim_date:%d.%m.%Y}, "
-                    f"{fmt(debt_amount)} руб.")
-    report_progress("")
-
-    report_progress(BANNER, percent=100)
-    report_progress("✅ ГОТОВО — можно скачивать DOCX или PDF")
-    report_progress(BANNER)
-
     return {
         "docx_path": str(docx_path),
         "pdf_path": str(pdf_path),
         "opis_path": str(opis_path),
         "safe_name": safe_name,
-        "claim_number": claim_number,
-        "claim_date": claim_date.strftime("%d.%m.%Y"),
-        "total_debt": fmt(debt_amount),
-        "registry_row": row_index,
     }
 
 
