@@ -125,6 +125,192 @@
     .actions-card {
       min-height: 12rem;
     }
+
+    /*
+      ── Дашборд ──────────────────────────────────────────────────────────────
+      Карточная сетка: показатели и графики живут в белых карточках с мягкой
+      тенью. Цвет несёт смысл (взыскано — зелёный, требования — синий), а не
+      украшает.
+    */
+    .dash-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.75rem;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+      padding: 1.25rem;
+    }
+    .dash-card-title {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #334155;
+      margin-bottom: 0.75rem;
+    }
+    .dash-section-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #334155;
+      padding-top: 0.5rem;
+    }
+    .dash-kpi-label {
+      font-size: 0.75rem;
+      color: #64748b;
+    }
+    .dash-kpi-value {
+      font-size: 1.75rem;
+      font-weight: 700;
+      line-height: 1.2;
+      color: #0f172a;
+      margin-top: 0.25rem;
+      /* Цифры не «прыгают» по ширине во время анимации набора значения */
+      font-variant-numeric: tabular-nums;
+    }
+    .dash-kpi-accent { color: #2563eb; }
+    .dash-kpi-success { color: #16a34a; }
+
+    /*
+      Высота графика фиксируется контейнером: Chart.js с maintainAspectRatio:
+      false тянется по контейнеру, иначе canvas растёт бесконечно.
+    */
+    .dash-chart-box {
+      position: relative;
+      height: 16rem;
+    }
+
+    .dash-table {
+      width: 100%;
+      font-size: 0.8125rem;
+      border-collapse: collapse;
+    }
+    .dash-table th {
+      text-align: left;
+      font-weight: 500;
+      color: #64748b;
+      padding: 0.375rem 0.5rem;
+      border-bottom: 1px solid #e2e8f0;
+      white-space: nowrap;
+    }
+    .dash-table td {
+      padding: 0.5rem;
+      border-bottom: 1px solid #f1f5f9;
+      color: #334155;
+    }
+    .dash-table td.dash-num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    /* Карточка года — кликабельная плитка, ведёт на экран этого года */
+    .dash-year-card {
+      text-align: left;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.75rem;
+      padding: 0.875rem 1rem;
+      transition: border-color 0.15s ease, background-color 0.15s ease,
+                  transform 0.15s ease;
+    }
+    .dash-year-card:hover {
+      border-color: #2563eb;
+      background: #eff6ff;
+      transform: translateY(-1px);
+    }
+
+    /*
+      Появление карточек при загрузке — один раз на отрисовку, а не при каждом
+      наведении. Задержка задаётся из JS через --dash-delay.
+    */
+    .dash-appear {
+      animation: dash-appear 0.32s cubic-bezier(0.4, 0, 0.2, 1) both;
+      animation-delay: var(--dash-delay, 0ms);
+    }
+    @keyframes dash-appear {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: none; }
+    }
+
+    /* Скелетоны на время загрузки — вместо пустого экрана */
+    .dash-skeleton {
+      background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 37%, #f1f5f9 63%);
+      background-size: 400% 100%;
+      animation: dash-shimmer 1.2s ease-in-out infinite;
+      border-radius: 0.5rem;
+    }
+    @keyframes dash-shimmer {
+      from { background-position: 100% 50%; }
+      to   { background-position: 0 50%; }
+    }
+
+    /* Титульная шапка отчёта: на экране не нужна, появляется только в печати */
+    .dashboard-print-only { display: none; }
+
+    /*
+      ── Печать дашборда в PDF ────────────────────────────────────────────────
+      Печатается ТЕКУЩИЙ экран как он есть: те же карточки и графики. Отличия
+      от экрана — вынужденные: прячем управление, разворачиваем прокручиваемый
+      контейнер во всю высоту (иначе в PDF попадёт только видимая часть) и
+      запрещаем резать карточки между страницами.
+    */
+    @media print {
+      @page {
+        size: A4 landscape;
+        margin: 12mm;
+      }
+
+      /* Фоновые заливки и цвета графиков браузер по умолчанию не печатает */
+      * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        /* В PDF не должно попасть промежуточное состояние анимации */
+        animation: none !important;
+        transition: none !important;
+      }
+
+      html, body {
+        height: auto !important;
+        overflow: visible !important;
+        background: #ffffff !important;
+      }
+
+      /* Всё, что не относится к отчёту: шапка приложения, вкладки, управление */
+      body > header,
+      body > nav,
+      .dashboard-toolbar,
+      #dashboard-settings,
+      [data-tab-panel]:not(#panel-dashboard) {
+        display: none !important;
+      }
+
+      main { padding: 0 !important; }
+
+      #panel-dashboard,
+      #dashboard-scroll {
+        height: auto !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+      }
+
+      .dashboard-print-only { display: block !important; }
+
+      /* Карточка и график целиком на одной странице */
+      .dash-card,
+      .dash-chart-box,
+      .dash-year-card {
+        break-inside: avoid;
+        page-break-inside: avoid;
+        box-shadow: none !important;
+      }
+      .dash-section-title {
+        break-before: page;
+        page-break-before: always;
+      }
+      .dash-chart-box { height: 12rem; }
+      .dash-table { break-inside: auto; }
+      .dash-table tr {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+    }
   </style>
 </head>
 <body class="bg-slate-50 text-slate-800 h-screen flex flex-col overflow-hidden">
@@ -158,6 +344,10 @@
     <button data-tab-target="panel-duty"
       class="nav-tab px-4 py-3 text-sm font-medium">
       🏛 Калькулятор госпошлины
+    </button>
+    <button data-tab-target="panel-dashboard"
+      class="nav-tab px-4 py-3 text-sm font-medium">
+      📊 Дашборд
     </button>
   </nav>
 
@@ -806,6 +996,204 @@
       </div>
     </section>
 
+    <!-- Панель: Дашборд -->
+    <section id="panel-dashboard" data-tab-panel class="hidden h-full">
+      <div id="dashboard-scroll" class="h-full min-h-0 overflow-y-auto thin-scroll pr-1">
+
+        <!-- Шапка вкладки: навигация, фильтр года, действия -->
+        <div class="dashboard-toolbar flex flex-wrap items-center gap-2 mb-4">
+          <button id="dashboard-back-button"
+            class="hidden border border-slate-300 hover:bg-white text-slate-700
+                   text-sm font-medium py-2 px-3 rounded-lg">
+            ← Назад
+          </button>
+          <div class="mr-auto">
+            <div id="dashboard-title" class="font-semibold text-slate-800">Судебные дела · все годы</div>
+            <div id="dashboard-updated-at" class="text-xs text-slate-400 min-h-[1rem]"></div>
+          </div>
+          <select id="dashboard-year-filter"
+            class="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
+            <option value="">Все годы</option>
+          </select>
+          <button id="dashboard-refresh-button"
+            class="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700
+                   text-white text-sm font-medium py-2 px-4 rounded-lg">
+            🚀 Обновить
+          </button>
+          <button id="dashboard-pdf-button"
+            class="flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-800
+                   text-white text-sm font-medium py-2 px-4 rounded-lg">
+            📄 Выгрузить в PDF
+          </button>
+          <button id="dashboard-settings-button"
+            class="border border-slate-300 hover:bg-white text-slate-700
+                   text-sm font-medium py-2 px-3 rounded-lg">
+            ⚙️ Настройки
+          </button>
+        </div>
+
+        <!-- Титульная шапка отчёта: только для печати -->
+        <div id="dashboard-print-header" class="dashboard-print-only mb-6">
+          <div class="text-xs text-slate-500">АО «Тривио» · Юридический департамент</div>
+          <div id="dashboard-print-title" class="text-xl font-bold text-slate-800">
+            Отчёт по судебной работе
+          </div>
+          <div id="dashboard-print-meta" class="text-xs text-slate-500"></div>
+        </div>
+
+        <!-- Настройки доступа к таблице -->
+        <div id="dashboard-settings" class="hidden dashboard-toolbar bg-white rounded-xl border border-slate-200 p-5 space-y-3 mb-4">
+          <div class="flex items-center gap-2 font-medium text-slate-700">🔐 Доступ к Google-таблице</div>
+          <div class="border-t border-slate-100 pt-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">JSON-ключ сервисного аккаунта</label>
+              <div class="flex gap-2">
+                <input type="text" id="dashboard-credentials-path" readonly placeholder="Файл не выбран"
+                  class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-slate-50" />
+                <button id="dashboard-credentials-button"
+                  class="border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm py-2 px-3 rounded-lg">
+                  Выбрать
+                </button>
+              </div>
+              <div class="mt-1 text-xs text-slate-400">
+                Ключ остаётся файлом на вашем диске — приложение хранит только путь к нему.
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Идентификатор таблицы</label>
+              <input type="text" id="dashboard-spreadsheet-id" placeholder="ID из ссылки на таблицу"
+                class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+              <div class="mt-1 text-xs text-slate-400">
+                Таблица открывается только на чтение: дашборд ничего в ней не меняет.
+              </div>
+            </div>
+          </div>
+          <button id="dashboard-settings-save-button"
+            class="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2.5 px-4 rounded-lg">
+            Сохранить и загрузить данные
+          </button>
+        </div>
+
+        <!-- Состояния: загрузка, ошибка, пустые данные -->
+        <div id="dashboard-state" class="dashboard-toolbar"></div>
+
+        <!-- Содержимое дашборда -->
+        <div id="dashboard-content" class="hidden space-y-5 pb-2">
+
+          <!-- Блок 1: ключевые показатели -->
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="dash-card dash-kpi">
+              <div class="dash-kpi-label">Всего дел</div>
+              <div id="kpi-cases-count" class="dash-kpi-value">0</div>
+            </div>
+            <div class="dash-card dash-kpi">
+              <div class="dash-kpi-label">Сумма требований</div>
+              <div id="kpi-claimed-total" class="dash-kpi-value dash-kpi-accent">0 ₽</div>
+            </div>
+            <div class="dash-card dash-kpi">
+              <div class="dash-kpi-label">Фактически взыскано</div>
+              <div id="kpi-recovered-total" class="dash-kpi-value dash-kpi-success">0 ₽</div>
+            </div>
+            <div class="dash-card dash-kpi">
+              <div class="dash-kpi-label">Процент взыскания</div>
+              <div id="kpi-recovery-percent" class="dash-kpi-value">—</div>
+            </div>
+          </div>
+
+          <!-- Блоки 2–3: воронка по стадиям и суммы по стадиям -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="dash-card">
+              <div class="dash-card-title">Воронка по стадиям</div>
+              <div class="dash-chart-box"><canvas id="chart-funnel"></canvas></div>
+            </div>
+            <div class="dash-card">
+              <div class="dash-card-title">Суммы требований по стадиям</div>
+              <div class="dash-chart-box"><canvas id="chart-stage-amounts"></canvas></div>
+            </div>
+          </div>
+
+          <!-- Блоки 4–5: структура требований и динамика по годам -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="dash-card">
+              <div class="dash-card-title">Структура требований</div>
+              <div class="dash-chart-box"><canvas id="chart-structure"></canvas></div>
+            </div>
+            <div id="dashboard-dynamics-card" class="dash-card">
+              <div class="dash-card-title">Динамика по годам</div>
+              <div class="dash-chart-box"><canvas id="chart-dynamics"></canvas></div>
+            </div>
+          </div>
+
+          <!-- Карточки по годам: только в общем обзоре -->
+          <div id="dashboard-year-cards-block" class="dash-card">
+            <div class="dash-card-title">Годы</div>
+            <div id="dashboard-year-cards" class="grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
+          </div>
+
+          <!-- Блоки 6–7: топ должников и распределение по судам -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="dash-card">
+              <div class="dash-card-title">Топ должников</div>
+              <div class="overflow-x-auto">
+                <table class="dash-table">
+                  <thead>
+                    <tr>
+                      <th>Должник</th><th>ИНН</th><th>Номер дела</th>
+                      <th class="text-right">Сумма, ₽</th><th>Статус</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashboard-top-debtors"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="dash-card">
+              <div class="dash-card-title">Распределение по судам</div>
+              <div class="dash-chart-box"><canvas id="chart-courts"></canvas></div>
+            </div>
+          </div>
+
+          <!-- Секция «Банкротство» (блоки 8–10) -->
+          <div class="dash-section-title">Банкротство</div>
+
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="dash-card dash-kpi">
+              <div class="dash-kpi-label">Банкротных дел</div>
+              <div id="kpi-bankruptcy-count" class="dash-kpi-value">0</div>
+            </div>
+            <div class="dash-card dash-kpi">
+              <div class="dash-kpi-label">Сумма в реестрах</div>
+              <div id="kpi-bankruptcy-total" class="dash-kpi-value dash-kpi-accent">0 ₽</div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="dash-card">
+              <div class="dash-card-title">Стадии банкротных дел</div>
+              <div class="dash-chart-box"><canvas id="chart-bankruptcy-stages"></canvas></div>
+            </div>
+            <div class="dash-card">
+              <div class="dash-card-title">Топ должников в банкротстве</div>
+              <div class="overflow-x-auto">
+                <table class="dash-table">
+                  <thead>
+                    <tr>
+                      <th>Должник</th><th>Номер дела</th><th>Суд</th>
+                      <th>Стадия</th><th class="text-right">Сумма, ₽</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashboard-bankruptcy-debtors"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Качество данных -->
+          <div id="dashboard-warnings" class="hidden dash-card border-amber-200 bg-amber-50"></div>
+        </div>
+
+      </div>
+    </section>
+
   </main>
 
   <!-- Модальное окно: результат долгой операции (успех/ошибка) -->
@@ -873,6 +1261,12 @@
     </div>
   </div>
 
+  <!--
+    Chart.js — графики дашборда. Библиотека лежит в репозитории (js/vendor/):
+    приложение работает без интернета, CDN здесь недоступен. Обычный script
+    (а не модуль) — UMD-сборка кладёт Chart в window до запуска app.js.
+  -->
+  <script src="js/vendor/chart.umd.js"></script>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>

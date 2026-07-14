@@ -10,6 +10,7 @@ import { initClaimTab } from "./tab-claim.js";
 import { initSorterTab } from "./tab-sorter.js";
 import { initPenaltyTab } from "./tab-penalty.js";
 import { initStateDutyTab } from "./tab-state-duty.js";
+import { initDashboardTab } from "./tab-dashboard.js";
 import { initDatePickers } from "./date-picker.js";
 
 /**
@@ -27,6 +28,7 @@ function initApplication() {
   initSorterTab();
   initPenaltyTab();
   initStateDutyTab();
+  initDashboardTab();
 }
 
 window.addEventListener("DOMContentLoaded", initApplication);

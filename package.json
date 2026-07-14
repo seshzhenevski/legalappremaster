@@ -1,6 +1,6 @@
 {
   "name": "trivio-legal",
-  "version": "5.0.0",
+  "version": "6.0.0",
   "description": "Юридический инструментарий на Tauri 2 + Python",
   "scripts": {
     "tauri": "tauri",
@@ -13,6 +13,7 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
+    "chart.js": "^4.5.1",
     "tailwindcss": "^3.4.19"
   }
 }

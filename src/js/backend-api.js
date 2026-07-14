@@ -181,3 +181,18 @@ export async function requestClaimExport(exportRequest) {
 export async function requestClaimByInn(inn) {
   return callBackendMethod("find_claim_by_inn", { inn: inn });
 }
+
+/**
+ * Запрашивает у бэкенда показатели дашборда из Google-таблицы.
+ *
+ * Принимает путь к JSON-ключу сервисного аккаунта и идентификатор таблицы.
+ * Возвращает посчитанные показатели сразу по всем годам и по каждому году
+ * отдельно — интерфейс переключает годы без повторного запроса. Таблица
+ * только читается.
+ */
+export async function requestDashboardData(credentialsPath, spreadsheetId) {
+  return callBackendMethod("load_dashboard_data", {
+    credentials_path: credentialsPath,
+    spreadsheet_id: spreadsheetId,
+  });
+}

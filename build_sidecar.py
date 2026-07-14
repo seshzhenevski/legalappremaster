@@ -47,10 +47,10 @@ def build_sidecar_executable() -> Path:
     Собирает main.py в один исполняемый файл через PyInstaller.
 
     Возвращает путь к собранному файлу в папке dist. Все зависимости
-    (docx, reportlab, Pillow, openpyxl, pypdf, num2words) вшиваются внутрь.
-    Флаг --paths указывает PyInstaller, где искать пакеты rpc, logic и
-    legal_tools; --collect-submodules гарантирует, что все подмодули
-    переиспользуемого ядра попадут в сборку.
+    (docx, reportlab, Pillow, openpyxl, pypdf, num2words, google-auth)
+    вшиваются внутрь. Флаг --paths указывает PyInstaller, где искать пакеты
+    rpc, logic и legal_tools; --collect-submodules гарантирует, что все
+    подмодули переиспользуемого ядра попадут в сборку.
     """
     subprocess.run(
         [
@@ -64,6 +64,12 @@ def build_sidecar_executable() -> Path:
             # Pillow (PIL) нужен reportlab для вставки PNG-логотипа с прозрачностью
             # в PDF претензии; reportlab импортирует его лениво, поэтому собираем явно.
             "--collect-all", "PIL",
+            # Авторизация дашборда в Google Sheets. google.auth и google.oauth2 живут
+            # в namespace-пакете google: без явного сбора PyInstaller их не находит,
+            # а криптографию для подписи JWT (rsa, pyasn1) тянет только по факту
+            # импорта внутри библиотеки — поэтому собираем весь пакет целиком.
+            "--collect-all", "google.auth",
+            "--collect-all", "google.oauth2",
             "--distpath", str(PROJECT_ROOT / "dist-sidecar"),
             "--workpath", str(PROJECT_ROOT / "build-sidecar"),
             "--specpath", str(PROJECT_ROOT / "build-sidecar"),

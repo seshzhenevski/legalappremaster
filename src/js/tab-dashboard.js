@@ -1,0 +1,872 @@
+// tab-dashboard.js
+// Вкладка «Дашборд» — аналитика по реестру судебных дел из Google-таблицы.
+//
+// Отвечает только за свою вкладку: читает настройки доступа, просит у бэкенда
+// посчитанные показатели и рисует их карточками и графиками (Chart.js).
+// Считает показатели не она — это делает слой логики; здесь только отрисовка.
+//
+// Данные грузятся один раз (при первом открытии вкладки и по кнопке
+// «Обновить»), а переключение между общим обзором и экраном года идёт по уже
+// загруженным данным — без повторного обращения к Google.
+
+import { requestDashboardData } from "./backend-api.js";
+import { loadSheetsSettings, saveSheetsSettings } from "./sheets-settings-store.js";
+import { selectJsonKeyFile } from "./file-dialogs.js";
+import { formatAmountAsRubles } from "./formatting.js";
+import { withButtonBusy } from "./loading-button.js";
+
+// Таблица с реестром судебных дел по умолчанию. Подставляется в поле настроек,
+// если оно ещё не заполнено, — вводить длинный идентификатор руками не нужно.
+// Значение можно поменять в поле: сохранённая настройка всегда важнее этой.
+const DEFAULT_SPREADSHEET_ID = "1vYiCw-uciX63FizN8XELikp9xE_laj8Rq9dTfhSOE4Q";
+
+// Цвет несёт смысл: погашенный долг — зелёный, процесс — синий, банкротство —
+// янтарный (деньги под угрозой), проблемы с данными — серый и красный. Ключи —
+// это стадии из реестра, как их возвращает бэкенд.
+const STAGE_COLORS = {
+  "подготовка иска": "#38bdf8",
+  "процесс": "#2563eb",
+  "исполнительное пр-во": "#8b5cf6",
+  "банкротство": "#f59e0b",
+  "долг погашен": "#16a34a",
+  "Статус не указан": "#cbd5e1",
+  "Статус не распознан": "#ef4444",
+};
+const DEFAULT_COLOR = "#2563eb";
+const STRUCTURE_COLORS = ["#2563eb", "#f59e0b", "#94a3b8"];
+
+const CHART_ANIMATION_MS = 400;
+
+// Загруженные данные и состояние экрана. selectedYear === null — общий обзор.
+let dashboardData = null;
+let selectedYear = null;
+let hasLoadedOnce = false;
+
+// Живые экземпляры Chart.js по id канваса: перед перерисовкой старый график
+// нужно уничтожить, иначе Chart.js ругается на занятый канвас.
+const charts = {};
+
+/**
+ * Инициализирует вкладку дашборда.
+ *
+ * Вешает обработчики на управление и подтягивает сохранённые настройки
+ * доступа. Данные не грузятся сразу: загрузка идёт при первом открытии
+ * вкладки, чтобы запуск приложения не ждал ответа Google.
+ */
+export function initDashboardTab() {
+  document
+    .getElementById("dashboard-refresh-button")
+    .addEventListener("click", () => loadDashboard({ force: true }));
+  document
+    .getElementById("dashboard-pdf-button")
+    .addEventListener("click", exportDashboardToPdf);
+  document
+    .getElementById("dashboard-settings-button")
+    .addEventListener("click", toggleSettingsPanel);
+  document
+    .getElementById("dashboard-settings-save-button")
+    .addEventListener("click", saveSettingsAndReload);
+  document
+    .getElementById("dashboard-credentials-button")
+    .addEventListener("click", chooseCredentialsFile);
+  document
+    .getElementById("dashboard-back-button")
+    .addEventListener("click", () => selectYear(null));
+  document
+    .getElementById("dashboard-year-filter")
+    .addEventListener("change", (event) => selectYear(event.target.value || null));
+
+  // Вкладка сама решает, когда ей грузиться: навигация о содержимом вкладок
+  // не знает и знать не должна.
+  document
+    .querySelector('[data-tab-target="panel-dashboard"]')
+    .addEventListener("click", () => loadDashboard({ force: false }));
+
+  fillSettingsFields();
+}
+
+// ── Загрузка данных ─────────────────────────────────────────────────────────
+
+/**
+ * Загружает показатели из таблицы и перерисовывает дашборд.
+ *
+ * Без force повторная загрузка не делается: данные уже в памяти, а
+ * переключение годов идёт по ним. Если доступ ещё не настроен, вместо ошибки
+ * показывается приглашение открыть настройки.
+ */
+async function loadDashboard({ force }) {
+  if (hasLoadedOnce && !force) {
+    return;
+  }
+
+  const settings = await loadSheetsSettings();
+  if (!settings.credentialsPath || !settings.spreadsheetId) {
+    showSettingsInvitation();
+    return;
+  }
+
+  showLoading();
+  const button = document.getElementById("dashboard-refresh-button");
+
+  try {
+    await withButtonBusy(button, "Загрузка…", async () => {
+      dashboardData = await requestDashboardData(
+        settings.credentialsPath,
+        settings.spreadsheetId,
+      );
+    });
+    hasLoadedOnce = true;
+    selectedYear = null;
+    fillYearFilter();
+    showUpdatedAt();
+    render();
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+// ── Переключение экранов: общий обзор ↔ год ─────────────────────────────────
+
+/**
+ * Переключает экран на конкретный год или обратно на общий обзор.
+ *
+ * Данные не перезапрашиваются — фильтрация идёт по уже загруженным
+ * показателям, поэтому переключение мгновенное.
+ */
+function selectYear(year) {
+  selectedYear = year;
+  document.getElementById("dashboard-year-filter").value = year || "";
+  render();
+}
+
+/**
+ * Возвращает секцию показателей для текущего экрана.
+ *
+ * Общий обзор — сводные показатели по всем годам; экран года — показатели
+ * только этого года (их посчитал бэкенд, здесь ничего не пересчитывается).
+ */
+function currentCasesSection() {
+  if (selectedYear === null) {
+    return dashboardData.cases.overall;
+  }
+  return dashboardData.cases.by_year[selectedYear] || emptySection();
+}
+
+/**
+ * Пустая секция — на случай, если выбранного года в данных не оказалось.
+ */
+function emptySection() {
+  return {
+    kpi: { cases_count: 0, claimed_total: 0, recovered_total: 0, recovery_percent: null },
+    funnel: [],
+    claim_structure: { principal: 0, penalty: 0, court_costs: 0 },
+    top_debtors: [],
+    courts: [],
+  };
+}
+
+// ── Отрисовка ───────────────────────────────────────────────────────────────
+
+/**
+ * Перерисовывает весь дашборд под текущий экран.
+ *
+ * Блоки, которые имеют смысл только в общем обзоре (динамика по годам и
+ * карточки годов), на экране года скрываются.
+ */
+function render() {
+  const section = currentCasesSection();
+  const isOverview = selectedYear === null;
+
+  document.getElementById("dashboard-state").innerHTML = "";
+  document.getElementById("dashboard-content").classList.remove("hidden");
+  document.getElementById("dashboard-back-button").classList.toggle("hidden", isOverview);
+
+  const period = isOverview ? "все годы" : `${selectedYear} год`;
+  document.getElementById("dashboard-title").textContent = `Судебные дела · ${period}`;
+  document.getElementById("dashboard-print-meta").textContent =
+    `Период: ${period} · Сформирован ${new Date().toLocaleDateString("ru-RU")}`;
+
+  renderKpi(section.kpi);
+  renderFunnel(section.funnel);
+  renderStageAmounts(section.funnel);
+  renderStructure(section.claim_structure);
+  renderTopDebtors(section.top_debtors);
+  renderCourts(section.courts);
+
+  document.getElementById("dashboard-dynamics-card").classList.toggle("hidden", !isOverview);
+  document.getElementById("dashboard-year-cards-block").classList.toggle("hidden", !isOverview);
+  if (isOverview) {
+    renderDynamics(dashboardData.cases.dynamics);
+    renderYearCards(dashboardData.cases.dynamics);
+  }
+
+  renderBankruptcy(dashboardData.bankruptcy);
+  renderWarnings(dashboardData.warnings);
+
+  playAppearAnimation();
+}
+
+/**
+ * Заполняет плитки ключевых показателей.
+ *
+ * Числа набираются плавно — это единственная анимация, которая касается
+ * значений, и она не повторяется при наведении.
+ */
+function renderKpi(kpi) {
+  animateNumber("kpi-cases-count", kpi.cases_count, (value) =>
+    Math.round(value).toLocaleString("ru-RU"),
+  );
+  animateNumber("kpi-claimed-total", kpi.claimed_total, formatMoney);
+  animateNumber("kpi-recovered-total", kpi.recovered_total, formatMoney);
+
+  // Требований нет — процента взыскания не существует. Прочерк вместо деления
+  // на ноль (и вместо «NaN%»).
+  const percentElement = document.getElementById("kpi-recovery-percent");
+  if (kpi.recovery_percent === null) {
+    percentElement.textContent = "—";
+  } else {
+    animateNumber("kpi-recovery-percent", kpi.recovery_percent, (value) =>
+      `${value.toFixed(1).replace(".", ",")} %`,
+    );
+  }
+}
+
+/**
+ * Рисует воронку по стадиям: сколько дел на каждой стадии.
+ *
+ * Горизонтальные столбцы в порядке процесса — видно, где скапливаются дела.
+ */
+function renderFunnel(funnel) {
+  const options = baseChartOptions();
+  // У стадии «долг погашен» бэкенд отдаёт разбивку: вернули до суда или взыскали
+  // по исполнительному листу. В столбце это одно число, а в подсказке — детали.
+  options.plugins.tooltip.callbacks.afterBody = (items) => {
+    const stage = funnel[items[0].dataIndex];
+    if (!stage || !stage.breakdown) {
+      return "";
+    }
+    return stage.breakdown.map((item) => `${item.name}: ${item.count}`);
+  };
+
+  renderChart("chart-funnel", funnel.length > 0, {
+    type: "bar",
+    data: {
+      labels: funnel.map((stage) => capitalize(stage.stage)),
+      datasets: [{
+        label: "Дел",
+        data: funnel.map((stage) => stage.count),
+        backgroundColor: funnel.map((stage) => STAGE_COLORS[stage.stage] || DEFAULT_COLOR),
+        borderRadius: 6,
+      }],
+    },
+    options: {
+      indexAxis: "y",
+      ...options,
+      scales: {
+        x: { beginAtZero: true, ticks: { precision: 0 } },
+        y: { grid: { display: false } },
+      },
+    },
+  });
+}
+
+/**
+ * Рисует суммы требований по стадиям — сколько денег «стоит» каждая стадия.
+ */
+function renderStageAmounts(funnel) {
+  const hasMoney = funnel.some((stage) => stage.claimed > 0);
+  renderChart("chart-stage-amounts", hasMoney, {
+    type: "bar",
+    data: {
+      labels: funnel.map((stage) => capitalize(stage.stage)),
+      datasets: [{
+        label: "Сумма требований, ₽",
+        data: funnel.map((stage) => stage.claimed),
+        backgroundColor: funnel.map((stage) => STAGE_COLORS[stage.stage] || DEFAULT_COLOR),
+        borderRadius: 6,
+      }],
+    },
+    options: {
+      ...baseChartOptions({ moneyTooltip: true }),
+      scales: {
+        x: { grid: { display: false }, ticks: { autoSkip: false, maxRotation: 40, minRotation: 0 } },
+        y: { beginAtZero: true, ticks: { callback: formatAxisMoney } },
+      },
+    },
+  });
+}
+
+/**
+ * Рисует структуру требований: доли ОСВ, неустойки и судебных расходов.
+ */
+function renderStructure(structure) {
+  const values = [structure.principal, structure.penalty, structure.court_costs];
+  renderChart("chart-structure", values.some((value) => value > 0), {
+    type: "doughnut",
+    data: {
+      labels: ["ПДЗ (основной долг)", "Неустойка", "Судебные расходы"],
+      datasets: [{
+        data: values,
+        backgroundColor: STRUCTURE_COLORS,
+        borderWidth: 0,
+      }],
+    },
+    options: {
+      ...baseChartOptions({ moneyTooltip: true, legend: true }),
+    },
+  });
+}
+
+/**
+ * Рисует динамику по годам: дела, требования и взыскания год к году.
+ *
+ * Количество дел вынесено на вторую ось: иначе столбик в десяток дел не виден
+ * рядом с миллионами рублей.
+ */
+function renderDynamics(dynamics) {
+  const byYearAscending = [...dynamics].reverse();
+  renderChart("chart-dynamics", byYearAscending.length > 0, {
+    type: "bar",
+    data: {
+      labels: byYearAscending.map((year) => year.year),
+      datasets: [
+        {
+          label: "Требования, ₽",
+          data: byYearAscending.map((year) => year.claimed),
+          backgroundColor: "#2563eb",
+          borderRadius: 6,
+          yAxisID: "y",
+        },
+        {
+          label: "Взыскано, ₽",
+          data: byYearAscending.map((year) => year.recovered),
+          backgroundColor: "#16a34a",
+          borderRadius: 6,
+          yAxisID: "y",
+        },
+        {
+          label: "Дел",
+          data: byYearAscending.map((year) => year.cases_count),
+          type: "line",
+          borderColor: "#0f172a",
+          backgroundColor: "#0f172a",
+          tension: 0.3,
+          yAxisID: "yCount",
+        },
+      ],
+    },
+    options: {
+      ...baseChartOptions({ moneyTooltip: true, legend: true }),
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, ticks: { callback: formatAxisMoney } },
+        yCount: {
+          beginAtZero: true,
+          position: "right",
+          grid: { display: false },
+          ticks: { precision: 0 },
+        },
+      },
+    },
+  });
+}
+
+/**
+ * Рисует распределение дел по судам.
+ */
+function renderCourts(courts) {
+  renderChart("chart-courts", courts.length > 0, {
+    type: "bar",
+    data: {
+      labels: courts.map((court) => court.name),
+      datasets: [{
+        label: "Дел",
+        data: courts.map((court) => court.count),
+        backgroundColor: DEFAULT_COLOR,
+        borderRadius: 6,
+      }],
+    },
+    options: {
+      indexAxis: "y",
+      ...baseChartOptions(),
+      scales: {
+        x: { beginAtZero: true, ticks: { precision: 0 } },
+        y: { grid: { display: false } },
+      },
+    },
+  });
+}
+
+/**
+ * Заполняет таблицу крупнейших дел по сумме требований.
+ */
+function renderTopDebtors(topDebtors) {
+  const body = document.getElementById("dashboard-top-debtors");
+  body.innerHTML = topDebtors
+    .map((row) => `
+      <tr>
+        <td>${escapeHtml(row.debtor)}</td>
+        <td>${escapeHtml(row.inn) || "—"}</td>
+        <td>${escapeHtml(row.case_number) || "—"}</td>
+        <td class="dash-num">${formatAmountAsRubles(row.claimed)}</td>
+        <td>${escapeHtml(capitalize(row.status))}</td>
+      </tr>`)
+    .join("");
+  if (topDebtors.length === 0) {
+    body.innerHTML = emptyTableRow(5);
+  }
+}
+
+/**
+ * Рисует секцию «Банкротство»: показатели, стадии и топ должников.
+ *
+ * Банкротные дела не разбиты по годам — секция одинакова на обоих экранах.
+ */
+function renderBankruptcy(bankruptcy) {
+  animateNumber("kpi-bankruptcy-count", bankruptcy.kpi.cases_count, (value) =>
+    Math.round(value).toLocaleString("ru-RU"),
+  );
+  animateNumber("kpi-bankruptcy-total", bankruptcy.kpi.claimed_total, formatMoney);
+
+  renderChart("chart-bankruptcy-stages", bankruptcy.stages.length > 0, {
+    type: "bar",
+    data: {
+      labels: bankruptcy.stages.map((stage) => stage.name),
+      datasets: [{
+        label: "Дел",
+        data: bankruptcy.stages.map((stage) => stage.count),
+        backgroundColor: "#8b5cf6",
+        borderRadius: 6,
+      }],
+    },
+    options: {
+      indexAxis: "y",
+      ...baseChartOptions(),
+      scales: {
+        x: { beginAtZero: true, ticks: { precision: 0 } },
+        y: { grid: { display: false } },
+      },
+    },
+  });
+
+  const body = document.getElementById("dashboard-bankruptcy-debtors");
+  body.innerHTML = bankruptcy.top_debtors
+    .map((row) => `
+      <tr>
+        <td>${escapeHtml(row.debtor)}</td>
+        <td>${escapeHtml(row.case_number) || "—"}</td>
+        <td>${escapeHtml(row.court) || "—"}</td>
+        <td>${escapeHtml(row.stage)}</td>
+        <td class="dash-num">${formatAmountAsRubles(row.claimed)}</td>
+      </tr>`)
+    .join("");
+  if (bankruptcy.top_debtors.length === 0) {
+    body.innerHTML = emptyTableRow(5);
+  }
+}
+
+/**
+ * Рисует кликабельные карточки годов.
+ *
+ * Карточка — короткая сводка по году и вход на его экран.
+ */
+function renderYearCards(dynamics) {
+  const container = document.getElementById("dashboard-year-cards");
+  container.innerHTML = "";
+
+  dynamics.forEach((year) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "dash-year-card";
+    card.innerHTML = `
+      <div class="font-semibold text-slate-800">${escapeHtml(year.year)}</div>
+      <div class="text-xs text-slate-500 mt-1">${year.cases_count} дел</div>
+      <div class="text-sm text-blue-600 font-medium">${formatMoney(year.claimed)}</div>
+      <div class="text-xs text-green-600">взыскано ${formatMoney(year.recovered)}</div>`;
+    card.addEventListener("click", () => selectYear(year.year));
+    container.appendChild(card);
+  });
+
+  if (dynamics.length === 0) {
+    container.innerHTML = '<div class="text-sm text-slate-400">Дел пока нет.</div>';
+  }
+}
+
+/**
+ * Показывает блок предупреждений о качестве данных.
+ *
+ * Пропуски в реестре — не ошибка приложения, а подсказка юристу, где реестр не
+ * дозаполнен. Если всё чисто, блок не показывается вовсе.
+ */
+function renderWarnings(warnings) {
+  const block = document.getElementById("dashboard-warnings");
+  const notes = [];
+
+  if (warnings.cases_without_status > 0) {
+    notes.push(`Строк без статуса: <b>${warnings.cases_without_status}</b> (стадия выведена по датам и суммам).`);
+  }
+  if (warnings.cases_without_debtor > 0) {
+    notes.push(`Дел без должника или ИНН: <b>${warnings.cases_without_debtor}</b>.`);
+  }
+  if (warnings.unparsed_amounts_count > 0) {
+    const rows = warnings.unparsed_amounts
+      .map((item) => `строка ${item.row}, «${escapeHtml(item.column)}»: «${escapeHtml(item.value)}»`)
+      .join("; ");
+    notes.push(
+      `Не удалось прочитать суммы: <b>${warnings.unparsed_amounts_count}</b> — учтены как ноль (${rows}).`,
+    );
+  }
+  if (warnings.unknown_statuses_count > 0) {
+    const rows = warnings.unknown_statuses
+      .map((item) => `строка ${item.row}: «${escapeHtml(item.value)}»`)
+      .join("; ");
+    notes.push(`Статус не распознан: <b>${warnings.unknown_statuses_count}</b> (${rows}).`);
+  }
+
+  block.classList.toggle("hidden", notes.length === 0);
+  block.innerHTML = notes.length === 0 ? "" : `
+    <div class="dash-card-title text-amber-800">⚠️ Качество данных в реестре</div>
+    <ul class="text-sm text-amber-900 space-y-1 list-disc pl-5">
+      ${notes.map((note) => `<li>${note}</li>`).join("")}
+    </ul>`;
+}
+
+// ── Графики: общая обвязка ──────────────────────────────────────────────────
+
+/**
+ * Базовые настройки графика, общие для всех диаграмм дашборда.
+ *
+ * Принимает флаги: показывать ли легенду и форматировать ли подсказку как
+ * деньги. Анимация короткая и не повторяется при наведении.
+ */
+function baseChartOptions({ moneyTooltip = false, legend = false } = {}) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: CHART_ANIMATION_MS },
+    plugins: {
+      legend: { display: legend, position: "bottom", labels: { boxWidth: 12, font: { size: 11 } } },
+      tooltip: {
+        callbacks: moneyTooltip ? { label: moneyTooltipLabel } : {},
+      },
+    },
+  };
+}
+
+/**
+ * Собирает текст подсказки для денежных графиков.
+ *
+ * Chart.js кладёт значение по-разному в зависимости от типа диаграммы: у
+ * круговой это просто число, у столбчатой — координата по оси значений (y у
+ * вертикальной, x у горизонтальной). Подпись берётся от набора данных, а у
+ * круговой — от сектора.
+ */
+function moneyTooltipLabel(context) {
+  const parsed = context.parsed;
+  const value = typeof parsed === "number" ? parsed : parsed.y ?? parsed.x ?? 0;
+  const name = context.dataset.label || context.label;
+  return `${name}: ${formatAmountAsRubles(value)} ₽`;
+}
+
+/**
+ * Рисует график на канвасе, заменяя предыдущий.
+ *
+ * Если данных нет, вместо графика показывается надпись «Нет данных за этот
+ * период» — пустая диаграмма выглядела бы как поломка.
+ */
+function renderChart(canvasId, hasData, config) {
+  const canvas = document.getElementById(canvasId);
+  const box = canvas.parentElement;
+
+  if (charts[canvasId]) {
+    charts[canvasId].destroy();
+    delete charts[canvasId];
+  }
+
+  const existingPlaceholder = box.querySelector(".dash-chart-empty");
+  if (existingPlaceholder) {
+    existingPlaceholder.remove();
+  }
+
+  if (!hasData) {
+    canvas.classList.add("hidden");
+    const placeholder = document.createElement("div");
+    placeholder.className =
+      "dash-chart-empty h-full flex items-center justify-center text-sm text-slate-400";
+    placeholder.textContent = "Нет данных за этот период";
+    box.appendChild(placeholder);
+    return;
+  }
+
+  canvas.classList.remove("hidden");
+  if (printMode) {
+    // Перед печатью график должен быть уже дорисован: анимированный канвас
+    // попал бы в PDF в промежуточном состоянии.
+    config.options.animation = false;
+  }
+  charts[canvasId] = new window.Chart(canvas, config);
+}
+
+// ── Печать в PDF ────────────────────────────────────────────────────────────
+
+let printMode = false;
+
+/**
+ * Выгружает текущий экран дашборда в PDF.
+ *
+ * Печатается сама страница (те же карточки и графики, что на экране) — в
+ * системном диалоге печати выбирается «Сохранить как PDF». Перед печатью
+ * графики перерисовываются без анимации: canvas не подчиняется правилу
+ * «animation: none» из печатных стилей, и недорисованный график попал бы в
+ * PDF как есть.
+ */
+async function exportDashboardToPdf() {
+  if (!dashboardData) {
+    return;
+  }
+
+  printMode = true;
+  render();
+  await waitForFrames(2);
+
+  window.print();
+  printMode = false;
+}
+
+/**
+ * Ждёт указанное число кадров отрисовки.
+ *
+ * Нужен, чтобы браузер успел вывести перерисованные графики до открытия
+ * диалога печати.
+ */
+function waitForFrames(count) {
+  return new Promise((resolve) => {
+    let remaining = count;
+    const step = () => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        resolve();
+      } else {
+        requestAnimationFrame(step);
+      }
+    };
+    requestAnimationFrame(step);
+  });
+}
+
+// ── Настройки доступа ───────────────────────────────────────────────────────
+
+/**
+ * Показывает или прячет панель настроек доступа к таблице.
+ */
+function toggleSettingsPanel() {
+  document.getElementById("dashboard-settings").classList.toggle("hidden");
+}
+
+/**
+ * Подставляет сохранённые настройки в поля панели настроек.
+ */
+async function fillSettingsFields() {
+  const settings = await loadSheetsSettings();
+  document.getElementById("dashboard-credentials-path").value = settings.credentialsPath;
+  document.getElementById("dashboard-spreadsheet-id").value =
+    settings.spreadsheetId || DEFAULT_SPREADSHEET_ID;
+}
+
+/**
+ * Открывает диалог выбора JSON-ключа сервисного аккаунта.
+ */
+async function chooseCredentialsFile() {
+  const selectedPath = await selectJsonKeyFile();
+  if (selectedPath) {
+    document.getElementById("dashboard-credentials-path").value = selectedPath;
+  }
+}
+
+/**
+ * Сохраняет настройки доступа и сразу загружает данные.
+ */
+async function saveSettingsAndReload() {
+  const credentialsPath = document.getElementById("dashboard-credentials-path").value.trim();
+  const spreadsheetId = document.getElementById("dashboard-spreadsheet-id").value.trim();
+
+  if (!credentialsPath || !spreadsheetId) {
+    showError("Укажите путь к JSON-ключу и идентификатор таблицы.");
+    return;
+  }
+
+  await saveSheetsSettings({ credentialsPath, spreadsheetId });
+  document.getElementById("dashboard-settings").classList.add("hidden");
+  await loadDashboard({ force: true });
+}
+
+// ── Состояния экрана ────────────────────────────────────────────────────────
+
+/**
+ * Показывает скелетоны на время загрузки — вместо пустого экрана.
+ */
+function showLoading() {
+  document.getElementById("dashboard-content").classList.add("hidden");
+  document.getElementById("dashboard-state").innerHTML = `
+    <div class="space-y-4">
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        ${'<div class="dash-skeleton h-24"></div>'.repeat(4)}
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        ${'<div class="dash-skeleton h-64"></div>'.repeat(2)}
+      </div>
+    </div>`;
+}
+
+/**
+ * Показывает понятное сообщение об ошибке доступа.
+ *
+ * Ошибка Google (нет прав, нет сети, неверный ключ) — это сообщение на экране,
+ * а не падение приложения.
+ */
+function showError(message) {
+  document.getElementById("dashboard-content").classList.add("hidden");
+  document.getElementById("dashboard-state").innerHTML = `
+    <div class="dash-card border-red-200 bg-red-50">
+      <div class="dash-card-title text-red-800">Не удалось загрузить данные</div>
+      <div class="text-sm text-red-900">${escapeHtml(message)}</div>
+    </div>`;
+}
+
+/**
+ * Приглашает настроить доступ, если ключ и таблица ещё не указаны.
+ */
+function showSettingsInvitation() {
+  document.getElementById("dashboard-content").classList.add("hidden");
+  document.getElementById("dashboard-state").innerHTML = `
+    <div class="dash-card">
+      <div class="dash-card-title">Доступ к таблице не настроен</div>
+      <div class="text-sm text-slate-600">
+        Нажмите «Настройки», укажите JSON-ключ сервисного аккаунта Google и
+        идентификатор таблицы с реестром судебных дел. Таблица открывается
+        только на чтение.
+      </div>
+    </div>`;
+}
+
+/**
+ * Показывает время последнего обновления данных.
+ */
+function showUpdatedAt() {
+  const time = new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  document.getElementById("dashboard-updated-at").textContent = `Данные на ${time}`;
+}
+
+/**
+ * Заполняет выпадающий фильтр годов по загруженным данным.
+ */
+function fillYearFilter() {
+  const filter = document.getElementById("dashboard-year-filter");
+  filter.innerHTML = '<option value="">Все годы</option>';
+  dashboardData.cases.years.forEach((year) => {
+    const option = document.createElement("option");
+    option.value = year;
+    option.textContent = year;
+    filter.appendChild(option);
+  });
+  filter.value = "";
+}
+
+// ── Мелкие помощники отрисовки ──────────────────────────────────────────────
+
+/**
+ * Проигрывает мягкое появление карточек.
+ *
+ * Запускается на каждую отрисовку (в том числе при переходе в год и обратно) —
+ * это и есть плавная смена экрана. Класс сначала снимается, иначе браузер не
+ * перезапустит уже сыгранную анимацию.
+ */
+function playAppearAnimation() {
+  if (printMode) {
+    return;
+  }
+  const cards = document.querySelectorAll("#dashboard-content .dash-card");
+  cards.forEach((card, index) => {
+    card.classList.remove("dash-appear");
+    void card.offsetWidth;
+    card.style.setProperty("--dash-delay", `${Math.min(index, 8) * 30}ms`);
+    card.classList.add("dash-appear");
+  });
+}
+
+/**
+ * Плавно набирает число в плитке показателя.
+ *
+ * Принимает id элемента, конечное значение и функцию форматирования. Нулевое
+ * значение выводится сразу — анимировать нечего.
+ */
+function animateNumber(elementId, targetValue, format) {
+  const element = document.getElementById(elementId);
+  const duration = printMode ? 0 : 400;
+
+  if (duration === 0 || !targetValue) {
+    element.textContent = format(targetValue || 0);
+    return;
+  }
+
+  const startedAt = performance.now();
+  const step = (now) => {
+    const progress = Math.min((now - startedAt) / duration, 1);
+    // easeOutCubic: быстро в начале, мягко в конце
+    const eased = 1 - Math.pow(1 - progress, 3);
+    element.textContent = format(targetValue * eased);
+    if (progress < 1) {
+      requestAnimationFrame(step);
+    }
+  };
+  requestAnimationFrame(step);
+}
+
+/**
+ * Форматирует сумму для плиток и карточек: рубли без копеек.
+ */
+function formatMoney(amount) {
+  return `${Math.round(amount).toLocaleString("ru-RU")} ₽`;
+}
+
+/**
+ * Форматирует подпись денежной оси: миллионы и тысячи вместо длинных чисел.
+ */
+function formatAxisMoney(value) {
+  if (Math.abs(value) >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(1).replace(".", ",")} млн`;
+  }
+  if (Math.abs(value) >= 1_000) {
+    return `${Math.round(value / 1_000)} тыс.`;
+  }
+  return String(value);
+}
+
+/**
+ * Возвращает строку-заглушку для пустой таблицы.
+ */
+function emptyTableRow(columnCount) {
+  return `<tr><td colspan="${columnCount}" class="text-slate-400">Нет данных за этот период</td></tr>`;
+}
+
+/**
+ * Делает первую букву заглавной (статусы в реестре пишут со строчной).
+ */
+function capitalize(text) {
+  if (!text) {
+    return "";
+  }
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/**
+ * Экранирует текст из таблицы перед вставкой в HTML.
+ *
+ * Данные приходят из Google-таблицы, которую ведут руками: в названии
+ * должника может оказаться что угодно, и оно не должно превращаться в разметку.
+ */
+function escapeHtml(text) {
+  const element = document.createElement("div");
+  element.textContent = text ?? "";
+  return element.innerHTML;
+}

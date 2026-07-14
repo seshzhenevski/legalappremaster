@@ -1,6 +1,6 @@
 [package]
 name = "trivio-legal"
-version = "5.0.0"
+version = "6.0.0"
 description = "Юридический инструментарий"
 authors = ["Trivio Legal Team"]
 edition = "2021"

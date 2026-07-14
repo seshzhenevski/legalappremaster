@@ -37,6 +37,23 @@ export async function selectTextFile() {
 }
 
 /**
+ * Открывает диалог выбора JSON-ключа сервисного аккаунта Google.
+ *
+ * Используется в настройках дашборда. Возвращает путь к выбранному файлу или
+ * null, если пользователь отменил. Сам файл остаётся лежать там, где лежал:
+ * приложение хранит только путь к нему.
+ */
+export async function selectJsonKeyFile() {
+  const { open } = window.__TAURI__.dialog;
+  const selectedPath = await open({
+    multiple: false,
+    directory: false,
+    filters: [{ name: "JSON-ключ", extensions: ["json"] }],
+  });
+  return selectedPath;
+}
+
+/**
  * Открывает диалог выбора папки.
  *
  * Показывает системный диалог выбора директории. Возвращает путь к

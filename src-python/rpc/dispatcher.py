@@ -21,6 +21,7 @@ from logic.claim_generator import (
     export_claim_document,
     find_claim_by_inn,
 )
+from logic.court_cases_dashboard import load_dashboard_data
 
 
 def handle_calculate_state_duty(params: dict, report_progress) -> dict:
@@ -150,6 +151,17 @@ def handle_export_claim_document(params: dict, report_progress) -> dict:
     return export_claim_document(params)
 
 
+def handle_load_dashboard_data(params: dict, report_progress) -> dict:
+    """
+    Обрабатывает запрос на загрузку данных дашборда из Google-таблицы.
+
+    Извлекает путь к JSON-ключу сервисного аккаунта и идентификатор таблицы и
+    возвращает посчитанные показатели сразу по всем годам и по каждому году.
+    Таблица только читается — записи в неё дашборд не делает.
+    """
+    return load_dashboard_data(params)
+
+
 # Карта методов RPC: имя метода → функция-обработчик.
 # Добавление нового метода — это одна строка здесь плюс одна функция выше.
 METHOD_HANDLERS = {
@@ -164,6 +176,7 @@ METHOD_HANDLERS = {
     "summarize_claim_excel": handle_summarize_claim_excel,
     "export_claim_document": handle_export_claim_document,
     "find_claim_by_inn": handle_find_claim_by_inn,
+    "load_dashboard_data": handle_load_dashboard_data,
 }
 
 
