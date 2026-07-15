@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 from decimal import Decimal
 
-from legal_tools.core.formatting import parse_amount_cell, parse_date_cell
+from legal_tools.core.formatting import parse_amount_cell, parse_any_date, parse_date_cell
 from legal_tools.importers.google_sheets import read_sheets_values
 
 CASES_SHEET_TITLE = "СУДЫ"
@@ -39,13 +39,17 @@ STAGE_LITIGATION = "процесс"
 STAGE_ENFORCEMENT = "исполнительное пр-во"
 STAGE_BANKRUPTCY = "банкротство"
 STAGE_REPAID = "долг погашен"
+STAGE_UNCOLLECTIBLE = "невозвратная задолженность"
 
+# Две последние стадии — исходы, а не этапы: долг вернули или списали. Поэтому
+# они замыкают воронку.
 STAGE_ORDER = [
     STAGE_CLAIM_PREPARATION,
     STAGE_LITIGATION,
     STAGE_ENFORCEMENT,
     STAGE_BANKRUPTCY,
     STAGE_REPAID,
+    STAGE_UNCOLLECTIBLE,
 ]
 
 # Погашенный долг в реестре помечают двумя способами: вернули до суда или
@@ -231,6 +235,9 @@ def _build_case(row: list, row_number: int, columns: dict, year: str | None, war
     # По его наличию видно, что дело дошло до приставов.
     enforcement = _text(row, columns, "enforcement")
 
+    in_work_date = parse_date_cell(_cell(row, columns, "in_work_date"))
+    decision_date = _decision_date(_cell(row, columns, "decision"))
+
     status, repaid_via = _resolve_status(
         raw_status=_text(row, columns, "status"),
         court_date=court_date,
@@ -247,8 +254,9 @@ def _build_case(row: list, row_number: int, columns: dict, year: str | None, war
         "inn": inn,
         "court": _text(row, columns, "court"),
         "case_number": _text(row, columns, "case_number"),
-        "in_work_date": parse_date_cell(_cell(row, columns, "in_work_date")),
+        "in_work_date": in_work_date,
         "court_date": court_date,
+        "review_days": _review_days(in_work_date, decision_date),
         "principal": principal,
         "penalty": penalty,
         "court_costs": court_costs,
@@ -288,6 +296,8 @@ def _resolve_status(raw_status: str, court_date, recovered: Decimal, enforcement
 
     if "долг погашен" in normalized:
         return STAGE_REPAID, _repayment_kind(normalized)
+    if "невозвратн" in normalized:
+        return STAGE_UNCOLLECTIBLE, None
     if "исполнительн" in normalized:
         return STAGE_ENFORCEMENT, None
     if "банкротств" in normalized:
@@ -299,6 +309,39 @@ def _resolve_status(raw_status: str, court_date, recovered: Decimal, enforcement
 
     warnings["unknown_statuses"].append({"row": row_number, "value": raw_status})
     return STATUS_UNRECOGNIZED, None
+
+
+def _decision_date(raw_decision):
+    """
+    Достаёт дату решения из колонки «Решение».
+
+    Там не дата, а фраза: «06.02.2026 - удовлетворен», иногда «удовлетворен
+    частично». Берётся первая дата в тексте; если её нет (или колонка пуста) —
+    None, и такое дело просто не участвует в расчёте срока.
+    """
+    if raw_decision is None or str(raw_decision).strip() == "":
+        return None
+
+    direct = parse_date_cell(raw_decision)
+    if direct is not None:
+        return direct
+
+    match = re.search(r"\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}", str(raw_decision))
+    return parse_any_date(match.group(0)) if match else None
+
+
+def _review_days(in_work_date, decision_date) -> int | None:
+    """
+    Считает срок рассмотрения дела: от «В работе» до даты решения.
+
+    Возвращает None, если хотя бы одной даты нет или они стоят в обратном
+    порядке (опечатка в реестре). Такое дело не искажает среднее — оно просто
+    не учитывается, как и просили: считаем только по тем данным, что есть.
+    """
+    if in_work_date is None or decision_date is None:
+        return None
+    days = (decision_date - in_work_date).days
+    return days if days >= 0 else None
 
 
 def _repayment_kind(normalized_status: str) -> str:
@@ -385,6 +428,11 @@ def _cases_section(cases: list[dict]) -> dict:
     claimed_total = sum((case["claimed"] for case in cases), Decimal(0))
     recovered_total = sum((case["recovered"] for case in cases), Decimal(0))
 
+    # Срок рассмотрения считается только по делам, где есть обе даты: начало
+    # работы и решение. Дела без них не занижают и не завышают среднее — они в
+    # расчёт не входят, поэтому рядом со средним отдаётся и размер выборки.
+    review_terms = [case["review_days"] for case in cases if case["review_days"] is not None]
+
     return {
         "kpi": {
             "cases_count": len(cases),
@@ -395,6 +443,10 @@ def _cases_section(cases: list[dict]) -> dict:
             "recovery_percent": (
                 _money(recovered_total / claimed_total * 100) if claimed_total > 0 else None
             ),
+            "average_review_days": (
+                round(sum(review_terms) / len(review_terms)) if review_terms else None
+            ),
+            "review_cases_count": len(review_terms),
         },
         "funnel": _funnel(cases),
         "claim_structure": {
@@ -412,7 +464,10 @@ def _cases_section(cases: list[dict]) -> dict:
             }
             for case in sorted(cases, key=lambda case: case["claimed"], reverse=True)[:TOP_DEBTORS_LIMIT]
         ],
-        "courts": _grouped_counts(case["court"] or NOT_SPECIFIED for case in cases),
+        # Пустой суд означает, что дело в суд не передавалось, — это не пробел в
+        # данных, и отдельной категории «Не указан» в распределении по судам
+        # быть не должно: она бы соперничала по величине с настоящими судами.
+        "courts": _grouped_counts(case["court"] for case in cases if case["court"]),
     }
 
 
@@ -460,6 +515,7 @@ def _bankruptcy_section(cases: list[dict]) -> dict:
             "claimed_total": _money(sum((case["claimed"] for case in cases), Decimal(0))),
         },
         "stages": _grouped_counts(case["stage"] for case in cases),
+        "dynamics": _bankruptcy_dynamics(cases),
         "top_debtors": [
             {
                 "debtor": case["debtor"] or NOT_SPECIFIED,
@@ -473,6 +529,52 @@ def _bankruptcy_section(cases: list[dict]) -> dict:
             for case in sorted(cases, key=lambda case: case["claimed"], reverse=True)[:TOP_DEBTORS_LIMIT]
         ],
     }
+
+
+def _bankruptcy_dynamics(cases: list[dict]) -> list[dict]:
+    """
+    Строит динамику банкротных дел по годам.
+
+    Год берётся не из отдельной колонки (её нет), а из номера дела: в
+    «А60-67691/2024» год — 2024. Если в ячейке несколько номеров с разными
+    годами, дело учитывается в каждом из этих годов целиком (и по количеству, и
+    по сумме) — так и просили: одно банкротство может тянуться делами разных
+    лет. Дела, где год из номера не вычитать, собираются под «Без года».
+    """
+    by_year: dict[str, dict] = {}
+    for case in cases:
+        years = _years_from_case_number(case["case_number"]) or {UNKNOWN_YEAR_LABEL}
+        for year in years:
+            bucket = by_year.setdefault(year, {"count": 0, "claimed": Decimal(0)})
+            bucket["count"] += 1
+            bucket["claimed"] += case["claimed"]
+
+    numeric_years = sorted((y for y in by_year if y != UNKNOWN_YEAR_LABEL), reverse=True)
+    if UNKNOWN_YEAR_LABEL in by_year:
+        numeric_years.append(UNKNOWN_YEAR_LABEL)
+
+    return [
+        {
+            "year": year,
+            "cases_count": by_year[year]["count"],
+            "claimed": _money(by_year[year]["claimed"]),
+        }
+        for year in numeric_years
+    ]
+
+
+def _years_from_case_number(case_number: str) -> set[str]:
+    """
+    Извлекает годы из номера (или номеров) арбитражного дела.
+
+    Номер заканчивается годом после косой черты: «А40-9014/2022» → 2022. В
+    ячейке может стоять несколько номеров (перенос строки или пробел) — тогда
+    возвращаются все встреченные годы. Берутся только правдоподобные годы
+    (20xx), чтобы не спутать год с частью номера дела.
+    """
+    if not case_number:
+        return set()
+    return set(re.findall(r"/\s*(20\d{2})", case_number))
 
 
 def _year_dynamics(year: str, cases: list[dict]) -> dict:

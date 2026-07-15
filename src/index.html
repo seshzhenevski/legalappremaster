@@ -133,11 +133,20 @@
       украшает.
     */
     .dash-card {
+      position: relative;
       background: #ffffff;
       border: 1px solid #e2e8f0;
       border-radius: 0.75rem;
       box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
       padding: 1.25rem;
+    }
+    /*
+      Карточка с раскрытой подсказкой поднимается над соседями, иначе
+      всплывающая подсказка ушла бы ПОД соседний блок «Средний срок».
+    */
+    .dash-card:focus-within,
+    .dash-card:hover {
+      z-index: 5;
     }
     .dash-card-title {
       font-size: 0.875rem;
@@ -198,6 +207,90 @@
       text-align: right;
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
+    }
+
+    /*
+      Значок «i» с подсказкой: объясняет, как считается показатель, и не
+      занимает места в плитке. Открывается по наведению и по фокусу с клавиатуры.
+    */
+    .dash-info {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      border-radius: 9999px;
+      border: 1px solid #cbd5e1;
+      color: #94a3b8;
+      font-size: 9px;
+      font-style: italic;
+      font-weight: 700;
+      cursor: help;
+      transition: color 0.15s ease, border-color 0.15s ease;
+    }
+    .dash-info:hover,
+    .dash-info:focus-visible {
+      color: #2563eb;
+      border-color: #2563eb;
+      outline: none;
+    }
+    .dash-info-bubble {
+      position: absolute;
+      /*
+        Подсказка раскрывается ВНИЗ от значка, а не вверх: плитки показателей
+        стоят у верхнего края прокручиваемой области, и всплывающая вверх
+        подсказка обрезалась бы её краем. Вниз места достаточно.
+      */
+      top: calc(100% + 8px);
+      /*
+        Прижата правым краем к значку и уходит влево (значок «i» — у правого
+        края узкой плитки, вправо подсказке расти некуда). Так она накрывает
+        плитку и соседние блоки слева, а не вылезает за пределы окна.
+      */
+      right: -0.5rem;
+      width: 17rem;
+      max-width: 78vw;
+      padding: 0.625rem 0.75rem;
+      background: #0f172a;
+      color: #f8fafc;
+      font-size: 0.75rem;
+      font-style: normal;
+      font-weight: 400;
+      line-height: 1.35;
+      text-align: left;
+      border-radius: 0.5rem;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.28);
+      opacity: 0;
+      transform: translateY(-4px);
+      pointer-events: none;
+      transition: opacity 0.18s ease, transform 0.18s ease;
+      z-index: 40;
+    }
+    .dash-info:hover .dash-info-bubble,
+    .dash-info:focus-visible .dash-info-bubble {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Скрытые строки таблицы: топ показывает 3 позиции, остальные — по кнопке */
+    .dash-row-collapsed { display: none; }
+
+    /*
+      Плавное раскрытие и сворачивание топа. Анимируется содержимое ячеек
+      (opacity + сдвиг), а не сама строка: у table-row анимация высоты работает
+      ненадёжно. При сворачивании строка исчезает по анимации, а display:none
+      ставится из JS уже после её завершения.
+    */
+    .dash-row-showing td { animation: dash-row-in 0.28s ease both; }
+    .dash-row-hiding td { animation: dash-row-out 0.2s ease both; }
+    @keyframes dash-row-in {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: none; }
+    }
+    @keyframes dash-row-out {
+      from { opacity: 1; transform: none; }
+      to   { opacity: 0; transform: translateY(-6px); }
     }
 
     /* Карточка года — кликабельная плитка, ведёт на экран этого года */
@@ -284,11 +377,23 @@
       main { padding: 0 !important; }
 
       #panel-dashboard,
-      #dashboard-scroll {
+      #dashboard-scroll,
+      #dashboard-content {
         height: auto !important;
         min-height: 0 !important;
         overflow: visible !important;
+        /*
+          Контент занимает ровно ширину печатной страницы. Без этого он
+          сохранял ширину окна приложения (шире A4) и обрезался правым полем.
+        */
+        width: 100% !important;
+        max-width: 100% !important;
+        padding-right: 0 !important;
+        margin-right: 0 !important;
       }
+
+      /* Внутренние прокрутки на бумаге не работают — разворачиваем их */
+      .overflow-x-auto { overflow: visible !important; }
 
       .dashboard-print-only { display: block !important; }
 
@@ -300,12 +405,53 @@
         page-break-inside: avoid;
         box-shadow: none !important;
       }
+      /*
+        Заголовок секции не отрывается от идущего под ним блока, но и НЕ
+        начинает новую страницу принудительно: из-за форс-разрыва перед
+        «Банкротством» предыдущая страница оставалась наполовину пустой, и
+        отчёт «уплывал». Пусть блоки текут подряд.
+      */
       .dash-section-title {
-        break-before: page;
-        page-break-before: always;
+        break-before: auto;
+        break-after: avoid;
+        page-break-after: avoid;
       }
       .dash-chart-box { height: 12rem; }
-      .dash-table { break-inside: auto; }
+
+      /*
+        Крупные значения в плитках не переносятся: иначе знак ₽ уезжает на
+        отдельную строку («153 463 954 \n ₽»). Чуть меньший кегль на печати
+        оставляет их в одну строку в узкой колонке.
+      */
+      .dash-kpi-value {
+        font-size: 1.4rem !important;
+        white-space: nowrap;
+      }
+      /* Плитки показателей в печати ужимаются, чтобы все пять вошли в ряд */
+      .dash-kpi { padding: 0.875rem !important; }
+
+      /* В отчёт идут все 10 позиций топа: кнопка «Показать все» на бумаге
+         бессмысленна, а свёрнутые строки в PDF выглядели бы как потерянные */
+      .dash-toggle,
+      .dash-info-bubble,
+      .dash-info { display: none !important; }
+      .dash-row-collapsed { display: table-row !important; }
+
+      /*
+        Таблицы вписываются в ширину страницы: фиксированная раскладка колонок
+        и перенос длинных значений (названий должников, номеров дел) не дают им
+        вылезти за правое поле.
+      */
+      .dash-table {
+        break-inside: auto;
+        table-layout: fixed;
+        width: 100% !important;
+      }
+      .dash-table th,
+      .dash-table td {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
       .dash-table tr {
         break-inside: avoid;
         page-break-inside: avoid;
@@ -1081,7 +1227,7 @@
         <div id="dashboard-content" class="hidden space-y-5 pb-2">
 
           <!-- Блок 1: ключевые показатели -->
-          <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
             <div class="dash-card dash-kpi">
               <div class="dash-kpi-label">Всего дел</div>
               <div id="kpi-cases-count" class="dash-kpi-value">0</div>
@@ -1095,8 +1241,26 @@
               <div id="kpi-recovered-total" class="dash-kpi-value dash-kpi-success">0 ₽</div>
             </div>
             <div class="dash-card dash-kpi">
-              <div class="dash-kpi-label">Процент взыскания</div>
+              <div class="dash-kpi-label flex items-center gap-1">
+                Процент взыскания
+                <span class="dash-info" tabindex="0">
+                  i
+                  <span class="dash-info-bubble">
+                    Отношение фактически взысканного к заявленному:
+                    сумма колонки «Долг погашен» ÷ сумма требований × 100 %.
+                    Требования — это колонка «Сумма», а если она пуста —
+                    ПДЗ + неустойка + судебные расходы.
+                    Считается по всем делам выбранного периода, включая те,
+                    где взыскание ещё не началось.
+                  </span>
+                </span>
+              </div>
               <div id="kpi-recovery-percent" class="dash-kpi-value">—</div>
+            </div>
+            <div class="dash-card dash-kpi">
+              <div class="dash-kpi-label">Средний срок рассмотрения</div>
+              <div id="kpi-average-review" class="dash-kpi-value">—</div>
+              <div id="kpi-average-review-note" class="text-xs text-slate-400 mt-1">&nbsp;</div>
             </div>
           </div>
 
@@ -1145,6 +1309,10 @@
                   <tbody id="dashboard-top-debtors"></tbody>
                 </table>
               </div>
+              <button id="dashboard-top-debtors-toggle"
+                class="dash-toggle hidden mt-2 text-sm text-blue-600 hover:text-blue-700 font-medium">
+                Показать все 10 ↓
+              </button>
             </div>
             <div class="dash-card">
               <div class="dash-card-title">Распределение по судам</div>
@@ -1166,6 +1334,11 @@
             </div>
           </div>
 
+          <div class="dash-card">
+            <div class="dash-card-title">Динамика банкротств по годам</div>
+            <div class="dash-chart-box"><canvas id="chart-bankruptcy-dynamics"></canvas></div>
+          </div>
+
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div class="dash-card">
               <div class="dash-card-title">Стадии банкротных дел</div>
@@ -1184,6 +1357,10 @@
                   <tbody id="dashboard-bankruptcy-debtors"></tbody>
                 </table>
               </div>
+              <button id="dashboard-bankruptcy-debtors-toggle"
+                class="dash-toggle hidden mt-2 text-sm text-blue-600 hover:text-blue-700 font-medium">
+                Показать все 10 ↓
+              </button>
             </div>
           </div>
 

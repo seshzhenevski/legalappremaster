@@ -29,13 +29,19 @@ const STAGE_COLORS = {
   "исполнительное пр-во": "#8b5cf6",
   "банкротство": "#f59e0b",
   "долг погашен": "#16a34a",
+  // Списанный долг — красный: это не этап, а потерянные деньги.
+  "невозвратная задолженность": "#dc2626",
+  // Категории про качество данных — серые: они про реестр, а не про процесс.
   "Статус не указан": "#cbd5e1",
-  "Статус не распознан": "#ef4444",
+  "Статус не распознан": "#94a3b8",
 };
 const DEFAULT_COLOR = "#2563eb";
 const STRUCTURE_COLORS = ["#2563eb", "#f59e0b", "#94a3b8"];
 
 const CHART_ANIMATION_MS = 400;
+
+// Сколько строк топа видно до нажатия «Показать все».
+const TOP_DEBTORS_COLLAPSED = 3;
 
 // Загруженные данные и состояние экрана. selectedYear === null — общий обзор.
 let dashboardData = null;
@@ -82,7 +88,21 @@ export function initDashboardTab() {
     .querySelector('[data-tab-target="panel-dashboard"]')
     .addEventListener("click", () => loadDashboard({ force: false }));
 
+  // Перед печатью canvas графиков нужно пересчитать под ширину печатной
+  // страницы: свой пиксельный размер он взял от окна приложения (оно шире A4),
+  // и без пересчёта графики в PDF уезжают вправо и обрезаются. После печати —
+  // обратно под экран.
+  window.addEventListener("beforeprint", resizeAllCharts);
+  window.addEventListener("afterprint", resizeAllCharts);
+
   fillSettingsFields();
+}
+
+/**
+ * Пересчитывает размеры всех живых графиков под текущую ширину контейнеров.
+ */
+function resizeAllCharts() {
+  Object.values(charts).forEach((chart) => chart.resize());
 }
 
 // ── Загрузка данных ─────────────────────────────────────────────────────────
@@ -157,7 +177,14 @@ function currentCasesSection() {
  */
 function emptySection() {
   return {
-    kpi: { cases_count: 0, claimed_total: 0, recovered_total: 0, recovery_percent: null },
+    kpi: {
+      cases_count: 0,
+      claimed_total: 0,
+      recovered_total: 0,
+      recovery_percent: null,
+      average_review_days: null,
+      review_cases_count: 0,
+    },
     funnel: [],
     claim_structure: { principal: 0, penalty: 0, court_costs: 0 },
     top_debtors: [],
@@ -229,6 +256,33 @@ function renderKpi(kpi) {
       `${value.toFixed(1).replace(".", ",")} %`,
     );
   }
+
+  renderAverageReviewTerm(kpi);
+}
+
+/**
+ * Показывает средний срок рассмотрения дела: от «В работе» до даты решения.
+ *
+ * Считается только по делам, где обе даты есть, поэтому под числом честно
+ * подписано, по какой выборке оно получено. Если таких дел нет — прочерк.
+ */
+function renderAverageReviewTerm(kpi) {
+  const note = document.getElementById("kpi-average-review-note");
+
+  // Сравнение через == null ловит и null (срок посчитать не из чего), и
+  // undefined (бэкенд старой версии, который поля ещё не отдаёт): вкладка
+  // покажет прочерк, а не упадёт.
+  if (kpi.average_review_days == null) {
+    document.getElementById("kpi-average-review").textContent = "—";
+    note.textContent = "нет дел с датами решения";
+    return;
+  }
+
+  animateNumber("kpi-average-review", kpi.average_review_days, (value) =>
+    pluralize(Math.round(value), "день", "дня", "дней"),
+  );
+  note.textContent =
+    `по ${pluralize(kpi.review_cases_count || 0, "делу", "делам", "делам")} с датой решения`;
 }
 
 /**
@@ -280,7 +334,7 @@ function renderStageAmounts(funnel) {
     data: {
       labels: funnel.map((stage) => capitalize(stage.stage)),
       datasets: [{
-        label: "Сумма требований, ₽",
+        label: "Сумма требований",
         data: funnel.map((stage) => stage.claimed),
         backgroundColor: funnel.map((stage) => STAGE_COLORS[stage.stage] || DEFAULT_COLOR),
         borderRadius: 6,
@@ -288,6 +342,9 @@ function renderStageAmounts(funnel) {
     },
     options: {
       ...baseChartOptions({ moneyTooltip: true }),
+      // Запас справа под последнюю скошенную подпись оси («Статус не указан») —
+      // без него она вылезала за область графика и обрезалась при печати.
+      layout: { padding: { right: 16 } },
       scales: {
         x: { grid: { display: false }, ticks: { autoSkip: false, maxRotation: 40, minRotation: 0 } },
         y: { beginAtZero: true, ticks: { callback: formatAxisMoney } },
@@ -309,10 +366,17 @@ function renderStructure(structure) {
         data: values,
         backgroundColor: STRUCTURE_COLORS,
         borderWidth: 0,
+        // Сектор под курсором выдвигается и слегка растёт — видно, о какой
+        // части требований подсказка.
+        hoverOffset: 14,
+        hoverBorderWidth: 0,
       }],
     },
     options: {
       ...baseChartOptions({ moneyTooltip: true, legend: true }),
+      // Запас вокруг кольца под выдвижение сектора (hoverOffset): без него
+      // выехавший сектор обрезался бы верхним краем области графика.
+      layout: { padding: 18 },
     },
   });
 }
@@ -331,27 +395,35 @@ function renderDynamics(dynamics) {
       labels: byYearAscending.map((year) => year.year),
       datasets: [
         {
-          label: "Требования, ₽",
+          label: "Требования",
           data: byYearAscending.map((year) => year.claimed),
           backgroundColor: "#2563eb",
           borderRadius: 6,
           yAxisID: "y",
+          // Столбцы — на заднем плане. Chart.js рисует датасеты от большего
+          // order к меньшему, поэтому больший order оказывается ниже.
+          order: 2,
         },
         {
-          label: "Взыскано, ₽",
+          label: "Взыскано",
           data: byYearAscending.map((year) => year.recovered),
           backgroundColor: "#16a34a",
           borderRadius: 6,
           yAxisID: "y",
+          order: 2,
         },
         {
           label: "Дел",
+          // Не деньги: в подсказке показывается просто число, без рублей.
+          isMoney: false,
           data: byYearAscending.map((year) => year.cases_count),
           type: "line",
           borderColor: "#0f172a",
           backgroundColor: "#0f172a",
           tension: 0.3,
           yAxisID: "yCount",
+          // Меньший order — кривую рисует последней, поверх столбцов.
+          order: 1,
         },
       ],
     },
@@ -401,20 +473,87 @@ function renderCourts(courts) {
  * Заполняет таблицу крупнейших дел по сумме требований.
  */
 function renderTopDebtors(topDebtors) {
-  const body = document.getElementById("dashboard-top-debtors");
-  body.innerHTML = topDebtors
-    .map((row) => `
-      <tr>
-        <td>${escapeHtml(row.debtor)}</td>
-        <td>${escapeHtml(row.inn) || "—"}</td>
-        <td>${escapeHtml(row.case_number) || "—"}</td>
-        <td class="dash-num">${formatAmountAsRubles(row.claimed)}</td>
-        <td>${escapeHtml(capitalize(row.status))}</td>
-      </tr>`)
-    .join("");
-  if (topDebtors.length === 0) {
-    body.innerHTML = emptyTableRow(5);
+  renderTopTable(
+    "dashboard-top-debtors",
+    "dashboard-top-debtors-toggle",
+    topDebtors,
+    (row) => `
+      <td>${escapeHtml(row.debtor)}</td>
+      <td>${escapeHtml(row.inn) || "—"}</td>
+      <td>${escapeHtml(row.case_number) || "—"}</td>
+      <td class="dash-num">${formatAmountAsRubles(row.claimed)}</td>
+      <td>${escapeHtml(capitalize(row.status))}</td>`,
+    5,
+  );
+}
+
+/**
+ * Заполняет таблицу топа: видны первые три места, остальные — по кнопке.
+ *
+ * Три строки держат карточку компактной, но полный топ-10 всегда под рукой.
+ * Кнопка появляется, только если разворачивать действительно есть что.
+ */
+function renderTopTable(bodyId, toggleId, rows, renderCells, columnCount) {
+  const body = document.getElementById(bodyId);
+  const toggle = document.getElementById(toggleId);
+
+  if (rows.length === 0) {
+    body.innerHTML = emptyTableRow(columnCount);
+    toggle.classList.add("hidden");
+    return;
   }
+
+  body.innerHTML = rows
+    .map((row, index) => {
+      const collapsed = index >= TOP_DEBTORS_COLLAPSED ? " class=\"dash-row-collapsed\"" : "";
+      return `<tr${collapsed}>${renderCells(row)}</tr>`;
+    })
+    .join("");
+
+  const hiddenCount = rows.length - TOP_DEBTORS_COLLAPSED;
+  toggle.classList.toggle("hidden", hiddenCount <= 0);
+  if (hiddenCount <= 0) {
+    return;
+  }
+
+  // Каждая отрисовка (в том числе переход в год) начинается со свёрнутого
+  // состояния, поэтому текст кнопки и обработчик задаются заново.
+  toggle.textContent = `Показать все ${rows.length} ↓`;
+  toggle.dataset.expanded = "false";
+  toggle.onclick = () => toggleTopRows(body, toggle, rows.length);
+}
+
+/**
+ * Разворачивает или сворачивает скрытые строки топа с плавной анимацией.
+ *
+ * При раскрытии строки сразу становятся видимыми и проявляются анимацией. При
+ * сворачивании сначала проигрывается исчезновение, и только по его завершении
+ * строка прячется (display:none) — иначе она пропала бы рывком.
+ */
+function toggleTopRows(body, toggle, totalRows) {
+  const expanded = toggle.dataset.expanded === "true";
+  const extraRows = Array.from(body.querySelectorAll("tr")).slice(TOP_DEBTORS_COLLAPSED);
+
+  extraRows.forEach((row) => {
+    row.classList.remove("dash-row-showing", "dash-row-hiding");
+
+    if (expanded) {
+      row.classList.add("dash-row-hiding");
+      row.addEventListener("animationend", () => {
+        row.classList.add("dash-row-collapsed");
+        row.classList.remove("dash-row-hiding");
+      }, { once: true });
+    } else {
+      row.classList.remove("dash-row-collapsed");
+      row.classList.add("dash-row-showing");
+      row.addEventListener("animationend", () => {
+        row.classList.remove("dash-row-showing");
+      }, { once: true });
+    }
+  });
+
+  toggle.dataset.expanded = expanded ? "false" : "true";
+  toggle.textContent = expanded ? `Показать все ${totalRows} ↓` : "Свернуть ↑";
 }
 
 /**
@@ -427,6 +566,8 @@ function renderBankruptcy(bankruptcy) {
     Math.round(value).toLocaleString("ru-RU"),
   );
   animateNumber("kpi-bankruptcy-total", bankruptcy.kpi.claimed_total, formatMoney);
+
+  renderBankruptcyDynamics(bankruptcy.dynamics);
 
   renderChart("chart-bankruptcy-stages", bankruptcy.stages.length > 0, {
     type: "bar",
@@ -449,20 +590,71 @@ function renderBankruptcy(bankruptcy) {
     },
   });
 
-  const body = document.getElementById("dashboard-bankruptcy-debtors");
-  body.innerHTML = bankruptcy.top_debtors
-    .map((row) => `
-      <tr>
-        <td>${escapeHtml(row.debtor)}</td>
-        <td>${escapeHtml(row.case_number) || "—"}</td>
-        <td>${escapeHtml(row.court) || "—"}</td>
-        <td>${escapeHtml(row.stage)}</td>
-        <td class="dash-num">${formatAmountAsRubles(row.claimed)}</td>
-      </tr>`)
-    .join("");
-  if (bankruptcy.top_debtors.length === 0) {
-    body.innerHTML = emptyTableRow(5);
-  }
+  renderTopTable(
+    "dashboard-bankruptcy-debtors",
+    "dashboard-bankruptcy-debtors-toggle",
+    bankruptcy.top_debtors,
+    (row) => `
+      <td>${escapeHtml(row.debtor)}</td>
+      <td>${escapeHtml(row.case_number) || "—"}</td>
+      <td>${escapeHtml(row.court) || "—"}</td>
+      <td>${escapeHtml(row.stage)}</td>
+      <td class="dash-num">${formatAmountAsRubles(row.claimed)}</td>`,
+    5,
+  );
+}
+
+/**
+ * Рисует динамику банкротств по годам.
+ *
+ * Год берётся из номера дела, поэтому дело с двумя номерами разных лет попадает
+ * в оба столбца. Взыскания в банкротстве нет (долг в реестре требований), так
+ * что показываются только сумма требований и количество дел на второй оси.
+ */
+function renderBankruptcyDynamics(dynamics) {
+  const byYearAscending = [...dynamics].reverse();
+  renderChart("chart-bankruptcy-dynamics", byYearAscending.length > 0, {
+    type: "bar",
+    data: {
+      labels: byYearAscending.map((year) => year.year),
+      datasets: [
+        {
+          label: "Сумма требований",
+          data: byYearAscending.map((year) => year.claimed),
+          backgroundColor: "#f59e0b",
+          borderRadius: 6,
+          yAxisID: "y",
+          // Столбцы — на заднем плане (больший order рисуется ниже).
+          order: 2,
+        },
+        {
+          label: "Дел",
+          isMoney: false,
+          data: byYearAscending.map((year) => year.cases_count),
+          type: "line",
+          borderColor: "#8b5cf6",
+          backgroundColor: "#8b5cf6",
+          tension: 0.3,
+          yAxisID: "yCount",
+          // Меньший order — кривая ложится поверх столбцов.
+          order: 1,
+        },
+      ],
+    },
+    options: {
+      ...baseChartOptions({ moneyTooltip: true, legend: true }),
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, ticks: { callback: formatAxisMoney } },
+        yCount: {
+          beginAtZero: true,
+          position: "right",
+          grid: { display: false },
+          ticks: { precision: 0 },
+        },
+      },
+    },
+  });
 }
 
 /**
@@ -480,7 +672,7 @@ function renderYearCards(dynamics) {
     card.className = "dash-year-card";
     card.innerHTML = `
       <div class="font-semibold text-slate-800">${escapeHtml(year.year)}</div>
-      <div class="text-xs text-slate-500 mt-1">${year.cases_count} дел</div>
+      <div class="text-xs text-slate-500 mt-1">${pluralize(year.cases_count, "дело", "дела", "дел")}</div>
       <div class="text-sm text-blue-600 font-medium">${formatMoney(year.claimed)}</div>
       <div class="text-xs text-green-600">взыскано ${formatMoney(year.recovered)}</div>`;
     card.addEventListener("click", () => selectYear(year.year));
@@ -565,6 +757,14 @@ function moneyTooltipLabel(context) {
   const parsed = context.parsed;
   const value = typeof parsed === "number" ? parsed : parsed.y ?? parsed.x ?? 0;
   const name = context.dataset.label || context.label;
+
+  // На денежном графике может жить и неденежный набор (количество дел в
+  // динамике). Рубли к нему не приписываются — это штуки, а не деньги.
+  if (context.dataset.isMoney === false) {
+    return `${name}: ${Math.round(value).toLocaleString("ru-RU")}`;
+  }
+  // Знак рубля ставится ровно один раз — здесь. В подписях наборов данных его
+  // быть не должно, иначе в подсказке получалось «Требования, ₽ … ₽».
   return `${name}: ${formatAmountAsRubles(value)} ₽`;
 }
 
@@ -820,6 +1020,27 @@ function animateNumber(elementId, targetValue, format) {
     }
   };
   requestAnimationFrame(step);
+}
+
+/**
+ * Склоняет существительное по числу: 1 дело, 3 дела, 9 дел.
+ *
+ * Принимает число и три формы слова — для 1, для 2–4 и для остальных. Правило
+ * общее для русского счёта: числа 11–14 всегда берут последнюю форму.
+ */
+function pluralize(count, one, few, many) {
+  const absolute = Math.abs(count) % 100;
+  const lastDigit = absolute % 10;
+
+  let form = many;
+  if (absolute < 11 || absolute > 14) {
+    if (lastDigit === 1) {
+      form = one;
+    } else if (lastDigit >= 2 && lastDigit <= 4) {
+      form = few;
+    }
+  }
+  return `${count.toLocaleString("ru-RU")} ${form}`;
 }
 
 /**
