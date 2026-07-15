@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Юридический инструментарий</title>
+  <title>Legal App</title>
   <link rel="stylesheet" href="css/tailwind.css" />
   <style>
     /*
@@ -14,6 +14,19 @@
       величины (из-за чего карточки в левой колонке становились чуть уже
       блока «Действия»).
     */
+    /*
+      Логотип в шапке — надпись «legal app» на прозрачном фоне, обрезанная по
+      границам текста. Высота задаётся по строке шапки, ширина тянется сама.
+    */
+    .app-logo {
+      display: inline-flex;
+      align-items: center;
+    }
+    .app-logo img {
+      height: 26px;
+      width: auto;
+    }
+
     .thin-scroll::-webkit-scrollbar {
       width: 8px;
     }
@@ -463,9 +476,11 @@
 
   <!-- Шапка -->
   <header class="shrink-0 bg-white border-b border-slate-200 px-6 py-3">
-    <h1 class="text-lg font-bold flex items-center gap-2">
-      <span>⚖️</span>
-      <span class="text-blue-600">Legal App</span>
+    <h1 class="flex items-center" aria-label="Legal App">
+      <!-- Логотип-надпись «legal app» на прозрачном фоне (обрезан по тексту) -->
+      <span class="app-logo">
+        <img src="logo.png" alt="Legal App" />
+      </span>
     </h1>
   </header>
 
