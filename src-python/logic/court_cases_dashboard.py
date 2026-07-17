@@ -21,6 +21,7 @@ from decimal import Decimal
 
 from legal_tools.core.formatting import parse_amount_cell, parse_any_date, parse_date_cell
 from legal_tools.importers.google_sheets import read_sheets_values
+from legal_tools.importers.claims_registry import read_claims_registry_rows, ClaimsRegistryError
 
 CASES_SHEET_TITLE = "СУДЫ"
 BANKRUPTCY_SHEET_TITLE = "БАНКРОТСТВО"
@@ -129,6 +130,26 @@ BANKRUPTCY_STAGE_KEYWORDS = [
 ]
 BANKRUPTCY_STAGE_OTHER = "Иное"
 
+# Организационно-правовые формы: при сопоставлении должника претензии с судебным
+# делом форма отбрасывается, сравнивается только суть наименования. «ООО ГИТИ»,
+# «ГИТИ ООО», «ГИТИ», «ООО "ГИТИ"» — один и тот же должник.
+ORG_FORM_TOKENS = {
+    "ооо", "оао", "пао", "зао", "ао", "нао", "оо", "ип", "пк", "нпп", "нпо",
+    "нко", "ано", "тсж", "тсн", "гуп", "муп", "фгуп", "фгбу", "чоу", "чоп",
+    "спк", "скпк", "кфх", "оаа", "тд", "пкф", "нп", "гк",
+}
+
+# Дата претензии, зашитая в текст номера: «65 (от 01.11.2024)», «66 от 01.11.2024».
+CLAIM_DATE_IN_NUMBER_PATTERN = re.compile(r"от\s+(\d{1,2}\.\d{1,2}\.\d{2,4})", re.IGNORECASE)
+
+# Колонки реестра «ОТПРАВКИ ПРЕТЕНЗИЙ.xlsx» позиционные: заголовки правятся
+# редко, а порядок фиксирован генератором претензий (см. append_registry_row).
+CLAIM_COL_DEBTOR = 0
+CLAIM_COL_INN = 1
+CLAIM_COL_NUMBER = 2
+CLAIM_COL_DATE = 3
+CLAIM_COL_AMOUNT = 4
+
 
 def load_dashboard_data(params: dict) -> dict:
     """
@@ -143,18 +164,34 @@ def load_dashboard_data(params: dict) -> dict:
         spreadsheet_id=params["spreadsheet_id"],
         sheet_titles=[CASES_SHEET_TITLE, BANKRUPTCY_SHEET_TITLE],
     )
+
+    # Реестр претензий — отдельный локальный файл на сетевой папке, не Google.
+    # Его недоступность не должна ронять весь дашборд: судебная часть уже
+    # прочитана, поэтому ошибку доступа заворачиваем в данные секции претензий.
+    claim_rows, claim_error = None, None
+    try:
+        claim_rows = read_claims_registry_rows()
+    except ClaimsRegistryError as error:
+        claim_error = str(error)
+
     return build_dashboard_data(
         case_rows=sheets.get(CASES_SHEET_TITLE, []),
         bankruptcy_rows=sheets.get(BANKRUPTCY_SHEET_TITLE, []),
+        claim_rows=claim_rows,
+        claim_error=claim_error,
     )
 
 
-def build_dashboard_data(case_rows: list, bankruptcy_rows: list) -> dict:
+def build_dashboard_data(case_rows: list, bankruptcy_rows: list,
+                         claim_rows: list | None = None, claim_error: str | None = None) -> dict:
     """
-    Считает все показатели дашборда по сырым строкам двух листов.
+    Считает все показатели дашборда по сырым строкам листов и реестра.
 
-    Принимает значения листов как их отдаёт Sheets API (первая строка —
-    заголовки). Чистая функция без обращений к сети — на ней держатся тесты.
+    Принимает значения листов «СУДЫ» и «БАНКРОТСТВО» (как их отдаёт Sheets API,
+    первая строка — заголовки) и, необязательно, строки реестра претензий.
+    Претензии сопоставляются с судебными делами, чтобы посчитать, сколько из
+    них передано на взыскание. Чистая функция без обращений к сети — на ней
+    держатся тесты.
     """
     warnings = _new_warnings()
 
@@ -171,6 +208,7 @@ def build_dashboard_data(case_rows: list, bankruptcy_rows: list) -> dict:
             "dynamics": [_year_dynamics(year, _filter_by_year(cases, year)) for year in years],
         },
         "bankruptcy": _bankruptcy_section(bankruptcies),
+        "claims": _claims_block(claim_rows, claim_error, cases),
         "warnings": _finalize_warnings(warnings),
     }
 
@@ -381,12 +419,18 @@ def _parse_bankruptcy_rows(rows: list, warnings: dict) -> list[dict]:
             continue
 
         raw_stage = _text(row, columns, "stage")
+        # В одной ячейке иногда стоят два суда через перенос строки (у дела два
+        # номера в разных судах). Для распределения по судам каждый учитывается
+        # отдельно (courts — сокращённый список), а в таблице топа показывается
+        # склейкой через « / » (court).
+        court_parts = _split_courts(_text(row, columns, "court"))
         cases.append({
             "row_number": row_number,
             "debtor": _text(row, columns, "debtor"),
             "creditor": _text(row, columns, "creditor"),
             "case_number": _text(row, columns, "case_number"),
-            "court": _text(row, columns, "court"),
+            "court": " / ".join(court_parts),
+            "courts": [_short_court_name(part) for part in court_parts],
             "stage_text": raw_stage or NOT_SPECIFIED,
             "stage": _bankruptcy_stage(raw_stage),
             "claimed": _amount(row, columns, "total", row_number, warnings, sheet="БАНКРОТСТВО"),
@@ -516,6 +560,9 @@ def _bankruptcy_section(cases: list[dict]) -> dict:
         },
         "stages": _grouped_counts(case["stage"] for case in cases),
         "dynamics": _bankruptcy_dynamics(cases),
+        # Каждый суд дела считается отдельно (дело с двумя судами попадает в оба).
+        # Пустые уже отсеяны при разборе, отдельной категории «Не указан» нет.
+        "courts": _grouped_counts(court for case in cases for court in case["courts"]),
         "top_debtors": [
             {
                 "debtor": case["debtor"] or NOT_SPECIFIED,
@@ -575,6 +622,266 @@ def _years_from_case_number(case_number: str) -> set[str]:
     if not case_number:
         return set()
     return set(re.findall(r"/\s*(20\d{2})", case_number))
+
+
+# ── Претензионный порядок ────────────────────────────────────────────────────
+
+def _claims_block(claim_rows: list | None, claim_error: str | None, cases: list[dict]) -> dict:
+    """
+    Собирает секцию «Претензионный порядок» по реестру претензий.
+
+    Претензии сопоставляются с судебными делами: если по должнику претензии
+    нашлось дело, претензия считается переданной на судебное взыскание. Секция
+    реагирует на выбранный год (год берётся из даты претензии), поэтому наравне
+    со сводкой возвращаются показатели по каждому году и динамика.
+
+    Если реестр не прочитался (нет сети/файла), возвращается признак
+    недоступности с текстом ошибки — интерфейс покажет его в блоке, а остальной
+    дашборд продолжит работать.
+    """
+    if claim_error is not None:
+        return {"available": False, "error": claim_error}
+    if claim_rows is None:
+        return {"available": False, "error": "Реестр претензий не читался."}
+
+    claims = _parse_claim_rows(claim_rows)
+    court_index = _build_court_index(cases)
+    for claim in claims:
+        _match_claim_to_court(claim, court_index)
+
+    years = _sorted_claim_years(claims)
+    return {
+        "available": True,
+        "years": years,
+        "overall": _claims_section(claims),
+        "by_year": {year: _claims_section(_filter_claims_by_year(claims, year)) for year in years},
+        "dynamics": [
+            _claim_year_dynamics(year, _filter_claims_by_year(claims, year)) for year in years
+        ],
+    }
+
+
+def _parse_claim_rows(rows: list) -> list[dict]:
+    """
+    Разбирает строки реестра претензий.
+
+    Первая строка — заголовки. Пустые строки пропускаются. Сумма при пропуске
+    считается нулём (как и в судебной части: незаполненная ячейка — рабочая
+    ситуация, а не ошибка). Дата берётся из колонки «Дата претензии», а если
+    она пуста — из текста номера («65 (от 01.11.2024)»).
+    """
+    if not rows:
+        return []
+
+    claims = []
+    for offset, row in enumerate(rows[1:]):
+        row_number = offset + 2
+        debtor = _claim_text(row, CLAIM_COL_DEBTOR)
+        number = _claim_text(row, CLAIM_COL_NUMBER)
+        amount_raw = row[CLAIM_COL_AMOUNT] if len(row) > CLAIM_COL_AMOUNT else None
+
+        if not debtor and not number and amount_raw in (None, ""):
+            continue
+
+        claim_date = _claim_date(row)
+        claims.append({
+            "row_number": row_number,
+            "debtor": debtor,
+            "inn": _digits(row[CLAIM_COL_INN] if len(row) > CLAIM_COL_INN else None),
+            "norm_name": _normalize_org_name(debtor),
+            "amount": parse_amount_cell(amount_raw) or Decimal(0),
+            "date": claim_date,
+            "year": str(claim_date.year) if claim_date else UNKNOWN_YEAR_LABEL,
+            "transferred": False,
+            "transfer_days": None,
+        })
+    return claims
+
+
+def _claim_date(row: list):
+    """
+    Достаёт дату претензии: из колонки «Дата претензии», иначе из номера.
+
+    В старых строках отдельной колонки с датой нет — она зашита в текст номера
+    («66 от 01.11.2024»). Возвращает None, если дату распознать не удалось.
+    """
+    parsed = parse_date_cell(row[CLAIM_COL_DATE] if len(row) > CLAIM_COL_DATE else None)
+    if parsed is not None:
+        return parsed
+
+    number = row[CLAIM_COL_NUMBER] if len(row) > CLAIM_COL_NUMBER else None
+    if number not in (None, ""):
+        match = CLAIM_DATE_IN_NUMBER_PATTERN.search(str(number))
+        if match:
+            return parse_any_date(match.group(1))
+    return None
+
+
+def _build_court_index(cases: list[dict]) -> dict:
+    """
+    Строит указатель судебных дел для сопоставления с претензиями.
+
+    По каждому должнику запоминается самая ранняя дата «в работе» среди его дел
+    (первая передача в работу по суду) — она нужна для срока «претензия →
+    взыскание». Отдельные указатели по ИНН и по нормализованному наименованию:
+    ИНН точнее, но заполнен не везде, поэтому наименование — запасной ключ.
+    """
+    by_inn: dict[str, object] = {}
+    by_name: dict[str, object] = {}
+    for case in cases:
+        inn = _digits(case["inn"])
+        name = _normalize_org_name(case["debtor"])
+        if inn:
+            _remember_earliest(by_inn, inn, case["in_work_date"])
+        if name:
+            _remember_earliest(by_name, name, case["in_work_date"])
+    return {"by_inn": by_inn, "by_name": by_name}
+
+
+def _remember_earliest(index: dict, key: str, in_work_date) -> None:
+    """Хранит в указателе самую раннюю дату «в работе» для ключа должника."""
+    if key not in index:
+        index[key] = in_work_date
+    elif in_work_date is not None and (index[key] is None or in_work_date < index[key]):
+        index[key] = in_work_date
+
+
+def _match_claim_to_court(claim: dict, court_index: dict) -> None:
+    """
+    Отмечает, передана ли претензия на судебное взыскание, и считает срок.
+
+    Сопоставление приоритетно по ИНН, при его отсутствии — по наименованию без
+    организационно-правовой формы. Срок «претензия → взыскание» считается,
+    только когда есть обе даты и дело взято в работу не раньше претензии
+    (иначе это аномалия реестра, и она не искажает средний срок).
+    """
+    in_work_date = None
+    if claim["inn"] and claim["inn"] in court_index["by_inn"]:
+        claim["transferred"] = True
+        in_work_date = court_index["by_inn"][claim["inn"]]
+    elif claim["norm_name"] and claim["norm_name"] in court_index["by_name"]:
+        claim["transferred"] = True
+        in_work_date = court_index["by_name"][claim["norm_name"]]
+
+    if claim["transferred"] and in_work_date is not None and claim["date"] is not None:
+        days = (in_work_date - claim["date"]).days
+        claim["transfer_days"] = days if days >= 0 else None
+
+
+def _claims_section(claims: list[dict]) -> dict:
+    """
+    Считает показатели претензионной работы по переданному набору претензий.
+
+    Одна функция обслуживает и сводку, и экран года — отличается только набор.
+    Процент считается по должникам (уникальным), а не по претензиям: у одного
+    должника может быть несколько претензий, и передан на взыскание он один раз.
+    """
+    claimed_total = sum((claim["amount"] for claim in claims), Decimal(0))
+    transferred = [claim for claim in claims if claim["transferred"]]
+    transferred_total = sum((claim["amount"] for claim in transferred), Decimal(0))
+    terms = [claim["transfer_days"] for claim in claims if claim["transfer_days"] is not None]
+
+    debtor_keys = {_claim_debtor_key(claim) for claim in claims}
+    transferred_keys = {_claim_debtor_key(claim) for claim in transferred}
+
+    return {
+        "kpi": {
+            "claims_count": len(claims),
+            "claimed_total": _money(claimed_total),
+            "transferred_count": len(transferred),
+            "transferred_total": _money(transferred_total),
+            "transfer_percent": (
+                _money(len(transferred_keys) / len(debtor_keys) * 100) if debtor_keys else None
+            ),
+            "average_days_to_transfer": round(sum(terms) / len(terms)) if terms else None,
+            "transfer_term_count": len(terms),
+        },
+    }
+
+
+def _claim_year_dynamics(year: str, claims: list[dict]) -> dict:
+    """Сводка по одному году для графика динамики претензий."""
+    return {
+        "year": year,
+        "claims_count": len(claims),
+        "claimed": _money(sum((claim["amount"] for claim in claims), Decimal(0))),
+    }
+
+
+def _claim_debtor_key(claim: dict) -> str:
+    """
+    Ключ должника для подсчёта уникальных: ИНН, иначе нормализованное имя.
+
+    Претензии без ИНН и без имени (теоретически) не схлопываются в одного
+    должника — для них ключом служит номер строки.
+    """
+    return claim["inn"] or claim["norm_name"] or f"row-{claim['row_number']}"
+
+
+def _sorted_claim_years(claims: list[dict]) -> list[str]:
+    """Годы претензий от свежего к старому; «Без года» — в конец."""
+    years = {claim["year"] for claim in claims}
+    numeric = sorted((year for year in years if year != UNKNOWN_YEAR_LABEL), reverse=True)
+    if UNKNOWN_YEAR_LABEL in years:
+        numeric.append(UNKNOWN_YEAR_LABEL)
+    return numeric
+
+
+def _filter_claims_by_year(claims: list[dict], year: str) -> list[dict]:
+    """Отбирает претензии одного года."""
+    return [claim for claim in claims if claim["year"] == year]
+
+
+def _claim_text(row: list, index: int) -> str:
+    """Текст ячейки реестра без лишних пробелов; пустая — пустая строка."""
+    raw = row[index] if len(row) > index else None
+    return "" if raw is None else str(raw).strip()
+
+
+def _normalize_org_name(raw: str) -> str:
+    """
+    Приводит наименование к сравнимому виду без организационно-правовой формы.
+
+    Убирает кавычки и пунктуацию, отбрасывает токены форм (ООО, АО, ИП…), чтобы
+    «ООО ГИТИ», «ГИТИ ООО», «ГИТИ», «ООО "ГИТИ"» сравнивались как один должник.
+    Сравнивается только суть наименования.
+    """
+    text = str(raw or "").lower().replace("ё", "е")
+    text = re.sub(r"[«»\"'()]", " ", text)
+    text = re.sub(r"[^0-9a-zа-я\s-]", " ", text)
+    tokens = [token for token in text.split() if token and token not in ORG_FORM_TOKENS]
+    return " ".join(tokens)
+
+
+def _split_courts(raw_court: str) -> list[str]:
+    """
+    Разбивает значение ячейки «Суд» на отдельные суды.
+
+    В одной ячейке через перенос строки может стоять два суда (у дела два
+    номера в разных судах). Возвращает список непустых названий; пустая ячейка
+    даёт пустой список.
+    """
+    return [part.strip() for part in str(raw_court or "").split("\n") if part.strip()]
+
+
+def _short_court_name(name: str) -> str:
+    """
+    Укорачивает длинное название суда для подписи в графике.
+
+    «АС города Санкт-Петербурга и Ленинградской области» → «АС города
+    Санкт-Петербурга»: часть после « и » отбрасывается. Названия без « и »
+    (большинство) не меняются.
+    """
+    return name.split(" и ")[0].strip() if " и " in name else name
+
+
+def _digits(value) -> str:
+    """Оставляет только цифры (ИНН может лежать и числом, и строкой)."""
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return re.sub(r"\D", "", str(value))
 
 
 def _year_dynamics(year: str, cases: list[dict]) -> dict:

@@ -469,6 +469,187 @@ class BankruptcyTests(unittest.TestCase):
         ])
         self.assertEqual(data["bankruptcy"]["dynamics"][0]["year"], "Без года")
 
+    def test_bankruptcy_court_distribution(self):
+        data = build_dashboard_data([], [
+            BANKRUPTCY_HEADER,
+            ["", "А", "А40-1/2025", "АС города Москвы", "Наблюдение", 100, ""],
+            ["", "Б", "А40-2/2025", "АС города Москвы", "Наблюдение", 100, ""],
+            ["", "В", "А07-3/2025", "АС Республики Башкортостан", "Наблюдение", 100, ""],
+            ["", "Г", "А07-4/2025", "", "Наблюдение", 100, ""],
+        ])
+        courts = data["bankruptcy"]["courts"]
+        self.assertEqual(courts[0], {"name": "АС города Москвы", "count": 2})
+        # Дело без суда в распределение не попадает.
+        self.assertNotIn("", [c["name"] for c in courts])
+
+    def test_multiline_court_split_in_distribution_but_joined_in_top(self):
+        data = build_dashboard_data([], [
+            BANKRUPTCY_HEADER,
+            ["", "РИНС", "А40-1/2025", "АС города Москвы\nАС Ханты-Мансийского АО",
+             "Наблюдение", 1000, ""],
+            ["", "Прочий", "А40-2/2025", "АС города Москвы", "Наблюдение", 500, ""],
+        ])
+        courts = {c["name"]: c["count"] for c in data["bankruptcy"]["courts"]}
+        # Составной суд разложен: Москва учтена дважды, Ханты — один раз.
+        self.assertEqual(courts["АС города Москвы"], 2)
+        self.assertEqual(courts["АС Ханты-Мансийского АО"], 1)
+        # В таблице топа тот же должник показан со складкой через « / ».
+        self.assertEqual(
+            data["bankruptcy"]["top_debtors"][0]["court"],
+            "АС города Москвы / АС Ханты-Мансийского АО",
+        )
+
+    def test_long_court_name_shortened_in_distribution(self):
+        data = build_dashboard_data([], [
+            BANKRUPTCY_HEADER,
+            ["", "А", "А56-1/2025", "АС города Санкт-Петербурга и Ленинградской области",
+             "Наблюдение", 100, ""],
+        ])
+        self.assertEqual(data["bankruptcy"]["courts"][0]["name"], "АС города Санкт-Петербурга")
+
+
+CLAIM_HEADER = [
+    "КОНТРАГЕНТ", "ИНН", "№претензии", "Дата претензии", "Сумма долга",
+    "Идентификатор почтового отправления",
+]
+
+
+def claim_row(debtor="", inn="", number="", date="", amount="", ident=""):
+    """Строка реестра претензий в порядке колонок файла."""
+    return [debtor, inn, number, date, amount, ident]
+
+
+class ClaimsParsingTests(unittest.TestCase):
+    """Разбор реестра претензий: суммы, даты, пустые строки."""
+
+    def test_claims_unavailable_without_registry(self):
+        data = build_dashboard_data([CASE_HEADER], [])
+        self.assertFalse(data["claims"]["available"])
+
+    def test_claims_error_is_passed_through(self):
+        data = build_dashboard_data([CASE_HEADER], [], claim_rows=None,
+                                    claim_error="Диск Z: недоступен")
+        self.assertFalse(data["claims"]["available"])
+        self.assertEqual(data["claims"]["error"], "Диск Z: недоступен")
+
+    def test_basic_claim_metrics(self):
+        data = build_dashboard_data([CASE_HEADER], [], claim_rows=[
+            CLAIM_HEADER,
+            claim_row(debtor="ООО Ромашка", number="60", date="01.11.2025", amount="1 000,50"),
+            claim_row(debtor="ООО Василёк", number="61", date="02.11.2025", amount="2000"),
+        ])
+        kpi = data["claims"]["overall"]["kpi"]
+        self.assertEqual(kpi["claims_count"], 2)
+        self.assertEqual(kpi["claimed_total"], 3000.5)
+
+    def test_empty_rows_skipped_and_missing_amount_is_zero(self):
+        data = build_dashboard_data([CASE_HEADER], [], claim_rows=[
+            CLAIM_HEADER,
+            claim_row(debtor="ООО Ромашка", number="60"),
+            claim_row(),
+            [None, None, None, None, None, None],
+        ])
+        kpi = data["claims"]["overall"]["kpi"]
+        self.assertEqual(kpi["claims_count"], 1)
+        self.assertEqual(kpi["claimed_total"], 0.0)
+
+    def test_date_taken_from_number_when_column_empty(self):
+        data = build_dashboard_data([CASE_HEADER], [], claim_rows=[
+            CLAIM_HEADER,
+            claim_row(debtor="ООО Ромашка", number="65 (от 01.11.2024)", amount="100"),
+        ])
+        self.assertEqual(data["claims"]["years"], ["2024"])
+
+    def test_claims_split_by_year(self):
+        data = build_dashboard_data([CASE_HEADER], [], claim_rows=[
+            CLAIM_HEADER,
+            claim_row(debtor="А", number="1", date="01.03.2025", amount="100"),
+            claim_row(debtor="Б", number="2", date="01.03.2026", amount="200"),
+            claim_row(debtor="В", number="3", date="02.03.2026", amount="300"),
+        ])
+        self.assertEqual(data["claims"]["years"], ["2026", "2025"])
+        self.assertEqual(data["claims"]["by_year"]["2026"]["kpi"]["claims_count"], 2)
+        self.assertEqual(data["claims"]["by_year"]["2025"]["kpi"]["claimed_total"], 100.0)
+
+
+class ClaimsMatchingTests(unittest.TestCase):
+    """Сопоставление претензий с судебными делами: ИНН, наименование, срок."""
+
+    def test_match_by_inn(self):
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(debtor="ООО «Ромашка-Торг»", inn="7700000001", total=5000),
+        ], [], claim_rows=[
+            CLAIM_HEADER,
+            claim_row(debtor="Ромашка", inn="7700000001", number="1", date="01.01.2025", amount="1000"),
+        ])
+        kpi = data["claims"]["overall"]["kpi"]
+        self.assertEqual(kpi["transferred_count"], 1)
+        self.assertEqual(kpi["transferred_total"], 1000.0)
+
+    def test_match_by_name_ignoring_legal_form(self):
+        # ИНН в претензии нет — матч по наименованию без ОПФ и кавычек.
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(debtor='ООО "ГИТИ"', total=5000),
+        ], [], claim_rows=[
+            CLAIM_HEADER,
+            claim_row(debtor="ГИТИ ООО", number="1", date="01.01.2025", amount="1000"),
+        ])
+        self.assertEqual(data["claims"]["overall"]["kpi"]["transferred_count"], 1)
+
+    def test_unmatched_claim_not_transferred(self):
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(debtor="ООО Другой", total=5000),
+        ], [], claim_rows=[
+            CLAIM_HEADER,
+            claim_row(debtor="ООО Ромашка", number="1", date="01.01.2025", amount="1000"),
+        ])
+        self.assertEqual(data["claims"]["overall"]["kpi"]["transferred_count"], 0)
+
+    def test_average_days_to_transfer(self):
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(debtor="ГИТИ", in_work="20.01.2025", total=5000),
+        ], [], claim_rows=[
+            CLAIM_HEADER,
+            claim_row(debtor="ГИТИ", number="1", date="01.01.2025", amount="1000"),
+        ])
+        kpi = data["claims"]["overall"]["kpi"]
+        self.assertEqual(kpi["average_days_to_transfer"], 19)
+        self.assertEqual(kpi["transfer_term_count"], 1)
+
+    def test_transfer_percent_counts_unique_debtors(self):
+        # Два должника: у одного (с двумя претензиями) есть суд.дело, у второго нет.
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(debtor="ГИТИ", total=5000),
+        ], [], claim_rows=[
+            CLAIM_HEADER,
+            claim_row(debtor="ГИТИ", number="1", date="01.01.2025", amount="1000"),
+            claim_row(debtor="ООО ГИТИ", number="2", date="02.01.2025", amount="500"),
+            claim_row(debtor="ООО Прочий", number="3", date="03.01.2025", amount="700"),
+        ], )
+        kpi = data["claims"]["overall"]["kpi"]
+        # Уникальных должников 2 (ГИТИ и Прочий), передан 1 → 50 %.
+        self.assertEqual(kpi["transfer_percent"], 50.0)
+        # Претензий передано 2 (обе по ГИТИ).
+        self.assertEqual(kpi["transferred_count"], 2)
+
+    def test_negative_transfer_term_ignored(self):
+        # Дело в работе раньше претензии — аномалия, в средний срок не идёт.
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(debtor="ГИТИ", in_work="01.01.2025", total=5000),
+        ], [], claim_rows=[
+            CLAIM_HEADER,
+            claim_row(debtor="ГИТИ", number="1", date="01.03.2025", amount="1000"),
+        ])
+        kpi = data["claims"]["overall"]["kpi"]
+        self.assertEqual(kpi["transferred_count"], 1)
+        self.assertIsNone(kpi["average_days_to_transfer"])
+
 
 if __name__ == "__main__":
     unittest.main()

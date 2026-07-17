@@ -228,6 +228,7 @@ function render() {
   }
 
   renderBankruptcy(dashboardData.bankruptcy);
+  renderClaims(dashboardData.claims, isOverview);
   renderWarnings(dashboardData.warnings);
 
   playAppearAnimation();
@@ -463,7 +464,9 @@ function renderCourts(courts) {
       ...baseChartOptions(),
       scales: {
         x: { beginAtZero: true, ticks: { precision: 0 } },
-        y: { grid: { display: false } },
+        // autoSkip: false — иначе Chart.js при большом числе судов прореживает
+        // подписи оси, и у части полос название пропадает.
+        y: { grid: { display: false }, ticks: { autoSkip: false } },
       },
     },
   });
@@ -590,6 +593,28 @@ function renderBankruptcy(bankruptcy) {
     },
   });
 
+  renderChart("chart-bankruptcy-courts", bankruptcy.courts.length > 0, {
+    type: "bar",
+    data: {
+      labels: bankruptcy.courts.map((court) => court.name),
+      datasets: [{
+        label: "Дел",
+        data: bankruptcy.courts.map((court) => court.count),
+        backgroundColor: "#8b5cf6",
+        borderRadius: 6,
+      }],
+    },
+    options: {
+      indexAxis: "y",
+      ...baseChartOptions(),
+      scales: {
+        x: { beginAtZero: true, ticks: { precision: 0 } },
+        // autoSkip: false — показываем название каждого суда, даже когда их много.
+        y: { grid: { display: false }, ticks: { autoSkip: false } },
+      },
+    },
+  });
+
   renderTopTable(
     "dashboard-bankruptcy-debtors",
     "dashboard-bankruptcy-debtors-toggle",
@@ -637,6 +662,139 @@ function renderBankruptcyDynamics(dynamics) {
           tension: 0.3,
           yAxisID: "yCount",
           // Меньший order — кривая ложится поверх столбцов.
+          order: 1,
+        },
+      ],
+    },
+    options: {
+      ...baseChartOptions({ moneyTooltip: true, legend: true }),
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, ticks: { callback: formatAxisMoney } },
+        yCount: {
+          beginAtZero: true,
+          position: "right",
+          grid: { display: false },
+          ticks: { precision: 0 },
+        },
+      },
+    },
+  });
+}
+
+/**
+ * Рисует секцию «Претензионный порядок».
+ *
+ * Показатели реагируют на выбранный год (год берётся из даты претензии).
+ * Динамика по годам имеет смысл только в общем обзоре и на экране года
+ * скрывается. Если реестр претензий не прочитался, вместо показателей —
+ * понятное сообщение, а остальной дашборд продолжает работать.
+ */
+function renderClaims(claims, isOverview) {
+  const unavailable = document.getElementById("claims-unavailable");
+  const content = document.getElementById("claims-content");
+
+  if (!claims || !claims.available) {
+    content.classList.add("hidden");
+    unavailable.classList.remove("hidden");
+    document.getElementById("claims-unavailable-message").textContent =
+      (claims && claims.error) || "Не удалось прочитать реестр претензий.";
+    return;
+  }
+
+  unavailable.classList.add("hidden");
+  content.classList.remove("hidden");
+
+  const section = isOverview
+    ? claims.overall
+    : (claims.by_year[selectedYear] || emptyClaimsSection());
+  renderClaimsKpi(section.kpi);
+
+  document.getElementById("claims-dynamics-card").classList.toggle("hidden", !isOverview);
+  if (isOverview) {
+    renderClaimsDynamics(claims.dynamics);
+  }
+}
+
+/**
+ * Пустая секция претензий — если у выбранного года претензий не оказалось.
+ */
+function emptyClaimsSection() {
+  return {
+    kpi: {
+      claims_count: 0,
+      claimed_total: 0,
+      transferred_count: 0,
+      transferred_total: 0,
+      transfer_percent: null,
+      average_days_to_transfer: null,
+      transfer_term_count: 0,
+    },
+  };
+}
+
+/**
+ * Заполняет плитки показателей претензионной работы.
+ */
+function renderClaimsKpi(kpi) {
+  animateNumber("kpi-claims-count", kpi.claims_count, (value) =>
+    Math.round(value).toLocaleString("ru-RU"),
+  );
+  animateNumber("kpi-claims-total", kpi.claimed_total, formatMoney);
+  animateNumber("kpi-claims-transferred-count", kpi.transferred_count, (value) =>
+    Math.round(value).toLocaleString("ru-RU"),
+  );
+  animateNumber("kpi-claims-transferred-total", kpi.transferred_total, formatMoney);
+
+  const percentElement = document.getElementById("kpi-claims-transfer-percent");
+  if (kpi.transfer_percent === null) {
+    percentElement.textContent = "—";
+  } else {
+    animateNumber("kpi-claims-transfer-percent", kpi.transfer_percent, (value) =>
+      `${value.toFixed(1).replace(".", ",")} %`,
+    );
+  }
+
+  const note = document.getElementById("kpi-claims-avg-term-note");
+  if (kpi.average_days_to_transfer == null) {
+    document.getElementById("kpi-claims-avg-term").textContent = "—";
+    note.textContent = "нет сопоставленных дел с датами";
+  } else {
+    animateNumber("kpi-claims-avg-term", kpi.average_days_to_transfer, (value) =>
+      pluralize(Math.round(value), "день", "дня", "дней"),
+    );
+    note.textContent =
+      `по ${pluralize(kpi.transfer_term_count || 0, "претензии", "претензиям", "претензиям")}`;
+  }
+}
+
+/**
+ * Рисует динамику претензий по годам: сумма столбцами, количество линией.
+ */
+function renderClaimsDynamics(dynamics) {
+  const byYearAscending = [...dynamics].reverse();
+  renderChart("chart-claims-dynamics", byYearAscending.length > 0, {
+    type: "bar",
+    data: {
+      labels: byYearAscending.map((year) => year.year),
+      datasets: [
+        {
+          label: "Сумма претензий",
+          data: byYearAscending.map((year) => year.claimed),
+          backgroundColor: "#0ea5e9",
+          borderRadius: 6,
+          yAxisID: "y",
+          order: 2,
+        },
+        {
+          label: "Претензий",
+          isMoney: false,
+          data: byYearAscending.map((year) => year.claims_count),
+          type: "line",
+          borderColor: "#0f172a",
+          backgroundColor: "#0f172a",
+          tension: 0.3,
+          yAxisID: "yCount",
           order: 1,
         },
       ],

@@ -1360,22 +1360,93 @@
               <div class="dash-chart-box"><canvas id="chart-bankruptcy-stages"></canvas></div>
             </div>
             <div class="dash-card">
-              <div class="dash-card-title">Топ должников в банкротстве</div>
-              <div class="overflow-x-auto">
-                <table class="dash-table">
-                  <thead>
-                    <tr>
-                      <th>Должник</th><th>Номер дела</th><th>Суд</th>
-                      <th>Стадия</th><th class="text-right">Сумма, ₽</th>
-                    </tr>
-                  </thead>
-                  <tbody id="dashboard-bankruptcy-debtors"></tbody>
-                </table>
+              <div class="dash-card-title">Распределение по судам</div>
+              <div class="dash-chart-box"><canvas id="chart-bankruptcy-courts"></canvas></div>
+            </div>
+          </div>
+
+          <div class="dash-card">
+            <div class="dash-card-title">Топ должников в банкротстве</div>
+            <div class="overflow-x-auto">
+              <table class="dash-table">
+                <thead>
+                  <tr>
+                    <th>Должник</th><th>Номер дела</th><th>Суд</th>
+                    <th>Стадия</th><th class="text-right">Сумма, ₽</th>
+                  </tr>
+                </thead>
+                <tbody id="dashboard-bankruptcy-debtors"></tbody>
+              </table>
+            </div>
+            <button id="dashboard-bankruptcy-debtors-toggle"
+              class="dash-toggle hidden mt-2 text-sm text-blue-600 hover:text-blue-700 font-medium">
+              Показать все 10 ↓
+            </button>
+          </div>
+
+          <!-- Секция «Претензионный порядок» -->
+          <div class="dash-section-title">Претензионный порядок</div>
+
+          <!-- Реестр недоступен: сообщение вместо показателей -->
+          <div id="claims-unavailable" class="hidden dash-card border-amber-200 bg-amber-50">
+            <div class="dash-card-title text-amber-800">Реестр претензий недоступен</div>
+            <div id="claims-unavailable-message" class="text-sm text-amber-900"></div>
+          </div>
+
+          <div id="claims-content" class="hidden space-y-4">
+            <div class="grid grid-cols-2 lg:grid-cols-3 gap-4">
+              <div class="dash-card dash-kpi">
+                <div class="dash-kpi-label">Всего претензий</div>
+                <div id="kpi-claims-count" class="dash-kpi-value">0</div>
               </div>
-              <button id="dashboard-bankruptcy-debtors-toggle"
-                class="dash-toggle hidden mt-2 text-sm text-blue-600 hover:text-blue-700 font-medium">
-                Показать все 10 ↓
-              </button>
+              <div class="dash-card dash-kpi">
+                <div class="dash-kpi-label">Сумма требований</div>
+                <div id="kpi-claims-total" class="dash-kpi-value dash-kpi-accent">0 ₽</div>
+              </div>
+              <div class="dash-card dash-kpi">
+                <div class="dash-kpi-label flex items-center gap-1">
+                  % должников на взыскании
+                  <span class="dash-info" tabindex="0">
+                    i
+                    <span class="dash-info-bubble">
+                      Доля должников, по претензиям которых уже заведено судебное
+                      дело. Претензия сопоставляется с делом по ИНН, а если его
+                      нет — по наименованию без организационно-правовой формы
+                      («ООО ГИТИ» = «ГИТИ»). Считается по уникальным должникам.
+                    </span>
+                  </span>
+                </div>
+                <div id="kpi-claims-transfer-percent" class="dash-kpi-value">—</div>
+              </div>
+              <div class="dash-card dash-kpi">
+                <div class="dash-kpi-label">Передано на взыскание</div>
+                <div id="kpi-claims-transferred-count" class="dash-kpi-value">0</div>
+              </div>
+              <div class="dash-card dash-kpi">
+                <div class="dash-kpi-label">Сумма переданных</div>
+                <div id="kpi-claims-transferred-total" class="dash-kpi-value dash-kpi-accent">0 ₽</div>
+              </div>
+              <div class="dash-card dash-kpi">
+                <div class="dash-kpi-label flex items-center gap-1">
+                  Средний срок до передачи
+                  <span class="dash-info" tabindex="0">
+                    i
+                    <span class="dash-info-bubble">
+                      Среднее число дней от даты претензии до даты «В работе» по
+                      соответствующему судебному делу. Считается только по
+                      претензиям, у которых есть обе даты и дело взято в работу
+                      не раньше претензии.
+                    </span>
+                  </span>
+                </div>
+                <div id="kpi-claims-avg-term" class="dash-kpi-value">—</div>
+                <div id="kpi-claims-avg-term-note" class="text-xs text-slate-400 mt-1">&nbsp;</div>
+              </div>
+            </div>
+
+            <div id="claims-dynamics-card" class="dash-card">
+              <div class="dash-card-title">Динамика претензий по годам</div>
+              <div class="dash-chart-box"><canvas id="chart-claims-dynamics"></canvas></div>
             </div>
           </div>
 
