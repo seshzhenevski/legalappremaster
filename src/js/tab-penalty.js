@@ -92,15 +92,18 @@ function buildAmountDateRow(rowType, amountValue = "", dateValue = "") {
   amountInput.type = "text";
   amountInput.placeholder = "Сумма";
   amountInput.value = amountValue;
+  // min-w-0 — чтобы поле суммы могло ужиматься при узком окне; иначе flex-1 с
+  // авто-минимумом распирает строку и кнопка удаления «✕» уезжает за край.
   amountInput.className =
-    "row-amount flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm";
+    "row-amount flex-1 min-w-0 px-3 py-2 border border-slate-300 rounded-lg text-sm";
 
   const dateField = createDateField({ extraHiddenClass: "row-date", value: dateValue });
   dateField.classList.add("w-36", "flex-shrink-0");
 
   const removeButton = document.createElement("button");
   removeButton.type = "button";
-  removeButton.className = "row-remove px-2 text-slate-400 hover:text-red-500";
+  // shrink-0 — кнопка удаления всегда видна целиком, не сжимается и не режется.
+  removeButton.className = "row-remove shrink-0 px-2 text-slate-400 hover:text-red-500";
   removeButton.textContent = "✕";
   removeButton.addEventListener("click", () => row.remove());
 

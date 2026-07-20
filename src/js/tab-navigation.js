@@ -37,8 +37,8 @@ function activateTab(targetPanelId) {
 
   document.querySelectorAll("[data-tab-target]").forEach((button) => {
     const isActive = button.dataset.tabTarget === targetPanelId;
-    // Цвет текста и анимированное подчёркивание задаются в CSS через класс
-    // .tab-active (см. .nav-tab в index.html) — здесь только переключаем его.
+    // Подсветка активного пункта задаётся в CSS через класс .tab-active
+    // (см. .sidebar-item в index.html) — здесь только переключаем его.
     button.classList.toggle("tab-active", isActive);
   });
 }

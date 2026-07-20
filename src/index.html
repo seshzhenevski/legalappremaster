@@ -88,44 +88,110 @@
     }
 
     /*
-      Вкладки: плавное «премиальное» подчёркивание без сдвига соседей.
-      Линия рисуется псевдоэлементом (position: absolute), поэтому смена
-      состояния никогда не двигает текст и соседние вкладки. При наведении
-      линия мягко проявляется из центра (scaleX 0→1) полупрозрачной; у
-      активной вкладки — сплошная линия фирменного синего и яркий текст.
+      Боковая навигация (сайдбар). Свёрнут — узкая полоса иконок; развёрнут —
+      плавно выезжает подложка с текстовыми метками. Анимируются ширина
+      сайдбара и прозрачность меток, поэтому переключение мягкое, без скачков.
+      Активный раздел подсвечен фоном и фирменным синим; при наведении фон
+      мягко проявляется. Ширина в свёрнутом виде фиксирована — контент рабочей
+      области считает свою раскладку от неё и на переключение не ломается.
     */
-    .nav-tab {
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      width: 64px;
+      background: #ffffff;
+      border-right: 1px solid #e2e8f0;
+      overflow: hidden;
+      transition: width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .sidebar[data-expanded="true"] {
+      /* Ширины хватает на самую длинную метку («Генератор искового заявления»),
+         чтобы текст не обрезался. */
+      width: 290px;
+    }
+
+    /* Кнопка-триггер сверху: та же геометрия, что у пунктов, ради ровного ряда */
+    .sidebar-toggle,
+    .sidebar-item {
       position: relative;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      height: 44px;
+      margin: 0 8px;
+      padding: 0 12px;
+      border-radius: 10px;
+      color: #475569;
+      cursor: pointer;
+      white-space: nowrap;
+      text-align: left;
+      transition: background 0.18s ease, color 0.18s ease;
+    }
+    .sidebar-toggle {
+      margin-top: 8px;
+      margin-bottom: 4px;
       color: #64748b;
-      transition: color 0.2s ease;
     }
-    .nav-tab:hover {
-      color: #334155;
+    .sidebar-toggle:hover,
+    .sidebar-item:hover {
+      background: #f1f5f9;
+      color: #0f172a;
     }
-    .nav-tab::after {
-      content: "";
-      position: absolute;
-      left: 14px;
-      right: 14px;
-      bottom: -1px;
-      height: 2px;
-      border-radius: 2px;
-      background: #2563eb;
-      opacity: 0;
-      transform: scaleX(0);
-      transform-origin: center;
-      transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease;
-    }
-    .nav-tab:hover::after {
-      opacity: 0.45;
-      transform: scaleX(1);
-    }
-    .nav-tab.tab-active {
+    .sidebar-item.tab-active {
+      background: #eff6ff;
       color: #2563eb;
     }
-    .nav-tab.tab-active::after {
+
+    .sidebar-icon,
+    .sidebar-toggle-icon {
+      flex: 0 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 19px;
+      line-height: 1;
+    }
+    /* Стрелка триггера разворачивается вместе с сайдбаром */
+    .sidebar-toggle-icon {
+      transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .sidebar-toggle-icon svg {
+      display: block;
+    }
+    .sidebar[data-expanded="true"] .sidebar-toggle-icon {
+      transform: rotate(180deg);
+    }
+
+    /*
+      Текстовые метки видны только в развёрнутом виде: в свёрнутом их обрезает
+      overflow сайдбара, а прозрачность плавно гасит текст. Небольшая задержка
+      на появление — чтобы текст проступал после того, как подложка выехала, а
+      не полз одновременно с ней.
+    */
+    .sidebar-label,
+    .sidebar-toggle-label {
+      font-size: 13px;
+      font-weight: 500;
+      /* line-height: 1 — иначе высокий строчный бокс метки смещает её вниз
+         относительно иконки/стрелки, и текст «Свернуть» стоит не по центру. */
+      line-height: 1;
+      opacity: 0;
+      transition: opacity 0.18s ease;
+    }
+    .sidebar[data-expanded="true"] .sidebar-label,
+    .sidebar[data-expanded="true"] .sidebar-toggle-label {
       opacity: 1;
-      transform: scaleX(1);
+      transition: opacity 0.2s ease 0.08s;
+    }
+
+    .sidebar-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding-top: 4px;
+      margin-top: 4px;
+      border-top: 1px solid #f1f5f9;
     }
 
     /*
@@ -177,12 +243,27 @@
       font-size: 0.75rem;
       color: #64748b;
     }
+    /*
+      Плитка — контейнер запроса: кегль значения считается от ширины самой
+      плитки (cqi), а не окна. Это важно в ряду из пяти плиток при развёрнутом
+      сайдбаре — плитки узкие, хотя окно широкое, и привязка к ширине окна их бы
+      не спасла.
+    */
+    .dash-kpi {
+      container-type: inline-size;
+    }
     .dash-kpi-value {
-      font-size: 1.75rem;
+      /*
+        Кегль подстраивается под ширину плитки: длинные суммы («154 232 711 ₽»)
+        ужимаются и не вылезают за край. white-space: nowrap держит знак ₽ на
+        одной строке с числом, а не переносит его вниз.
+      */
+      font-size: clamp(0.8rem, 12cqi, 1.75rem);
       font-weight: 700;
       line-height: 1.2;
       color: #0f172a;
       margin-top: 0.25rem;
+      white-space: nowrap;
       /* Цифры не «прыгают» по ширине во время анимации набора значения */
       font-variant-numeric: tabular-nums;
     }
@@ -378,15 +459,17 @@
         background: #ffffff !important;
       }
 
-      /* Всё, что не относится к отчёту: шапка приложения, вкладки, управление */
+      /* Всё, что не относится к отчёту: шапка приложения, сайдбар, управление */
       body > header,
-      body > nav,
+      #sidebar,
       .dashboard-toolbar,
       #dashboard-settings,
       [data-tab-panel]:not(#panel-dashboard) {
         display: none !important;
       }
 
+      /* Строку «сайдбар + контент» на бумаге разворачиваем в обычный поток */
+      .app-body { display: block !important; }
       main { padding: 0 !important; }
 
       #panel-dashboard,
@@ -484,35 +567,61 @@
     </h1>
   </header>
 
-  <!-- Навигация по вкладкам -->
-  <nav class="shrink-0 bg-white border-b border-slate-200 px-6 flex gap-1">
-    <button data-tab-target="panel-lawsuit"
-      class="nav-tab px-4 py-3 text-sm font-medium">
-      📝 Генератор искового заявления
-    </button>
-    <button data-tab-target="panel-claim"
-      class="nav-tab px-4 py-3 text-sm font-medium">
-      📨 Генератор претензий
-    </button>
-    <button data-tab-target="panel-sorter"
-      class="nav-tab px-4 py-3 text-sm font-medium">
-      📁 Сортировщик документов
-    </button>
-    <button data-tab-target="panel-penalty"
-      class="nav-tab px-4 py-3 text-sm font-medium">
-      💰 Калькулятор неустойки
-    </button>
-    <button data-tab-target="panel-duty"
-      class="nav-tab px-4 py-3 text-sm font-medium">
-      🏛 Калькулятор госпошлины
-    </button>
-    <button data-tab-target="panel-dashboard"
-      class="nav-tab px-4 py-3 text-sm font-medium">
-      📊 Дашборд
-    </button>
-  </nav>
+  <!-- Строка «сайдбар + рабочая область» -->
+  <div class="app-body flex-1 min-h-0 flex">
 
-  <main class="flex-1 min-h-0 p-5">
+    <!-- Боковая навигация -->
+    <aside id="sidebar" class="sidebar" data-expanded="false">
+      <button id="sidebar-toggle" type="button" class="sidebar-toggle"
+        aria-label="Раскрыть меню" title="Раскрыть">
+        <span class="sidebar-toggle-icon" aria-hidden="true">
+          <!-- Двойная стрелка: SVG вместо символа « — центрируется флексом
+               ровно, без смещения от метрик глифа. Разворачивается на 180°. -->
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path d="M6 6l6 6-6 6" />
+            <path d="M13 6l6 6-6 6" />
+          </svg>
+        </span>
+        <span class="sidebar-toggle-label">Свернуть</span>
+      </button>
+
+      <nav class="sidebar-nav">
+        <button data-tab-target="panel-lawsuit" type="button"
+          class="sidebar-item" title="Генератор искового заявления">
+          <span class="sidebar-icon" aria-hidden="true">📝</span>
+          <span class="sidebar-label">Генератор искового заявления</span>
+        </button>
+        <button data-tab-target="panel-claim" type="button"
+          class="sidebar-item" title="Генератор претензий">
+          <span class="sidebar-icon" aria-hidden="true">📨</span>
+          <span class="sidebar-label">Генератор претензий</span>
+        </button>
+        <button data-tab-target="panel-sorter" type="button"
+          class="sidebar-item" title="Сортировщик документов">
+          <span class="sidebar-icon" aria-hidden="true">📁</span>
+          <span class="sidebar-label">Сортировщик документов</span>
+        </button>
+        <button data-tab-target="panel-penalty" type="button"
+          class="sidebar-item" title="Калькулятор неустойки">
+          <span class="sidebar-icon" aria-hidden="true">💰</span>
+          <span class="sidebar-label">Калькулятор неустойки</span>
+        </button>
+        <button data-tab-target="panel-duty" type="button"
+          class="sidebar-item" title="Калькулятор госпошлины">
+          <span class="sidebar-icon" aria-hidden="true">🏛</span>
+          <span class="sidebar-label">Калькулятор госпошлины</span>
+        </button>
+        <button data-tab-target="panel-dashboard" type="button"
+          class="sidebar-item" title="Дашборд">
+          <span class="sidebar-icon" aria-hidden="true">📊</span>
+          <span class="sidebar-label">Дашборд</span>
+        </button>
+      </nav>
+    </aside>
+
+    <main class="flex-1 min-h-0 min-w-0 p-5">
 
     <!-- Панель: Генератор иска -->
     <section id="panel-lawsuit" data-tab-panel class="hidden h-full">
@@ -571,7 +680,7 @@
                     class="flex-1 min-w-0 px-2 py-1.5 border border-slate-300 rounded-lg text-sm" />
                   <span class="text-xs text-slate-500 whitespace-nowrap shrink-0">руб.</span>
                 </div>
-                <div class="flex items-center gap-1 flex-nowrap w-full">
+                <div class="flex items-center gap-1 flex-wrap gap-y-2 w-full">
                   <label class="text-xs text-slate-600 whitespace-nowrap shrink-0">Процент неустойки:</label>
                   <input type="text" id="lawsuit-rate" value="0.1"
                     class="w-10 shrink-0 px-1.5 py-1.5 border border-slate-300 rounded-lg text-sm text-center" />
@@ -968,26 +1077,19 @@
             <!-- Ставка неустойки -->
             <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
               <div class="flex items-center gap-2 font-medium text-slate-700">📈 Ставка неустойки</div>
-              <div class="border-t border-slate-100 pt-3 overflow-hidden">
+              <div class="border-t border-slate-100 pt-3">
                 <!--
-                  Одна компактная строка управляющих элементов (items-center →
-                  все на одной оси, gap-1.5 → плотный фиксированный зазор). Обе
-                  подписи-подсказки вынесены из потока (position: absolute под
-                  своим инпутом), поэтому НЕ растягивают ячейки и не создают
-                  пустот между элементами. pb-6 резервирует место под подписи.
-                  overflow: hidden на карточке запрещает скролл при сжатии окна.
+                  Компактный ряд управляющих элементов. flex-wrap — при узком
+                  окне лишние элементы переносятся на следующую строку, а не
+                  обрезаются. Пояснения под инпутами убраны по ТЗ.
                 -->
-                <div class="flex items-center gap-1.5 flex-nowrap pb-6">
+                <div class="flex items-center gap-1.5 flex-wrap gap-y-2">
                   <span class="text-xs text-slate-600 whitespace-nowrap shrink-0">Ставка неустойки:</span>
 
-                  <!-- Процент неустойки + подпись под инпутом -->
-                  <div class="relative shrink-0 flex items-center gap-1">
+                  <div class="shrink-0 flex items-center gap-1">
                     <input type="text" id="penalty-rate" value="0.1"
                       class="w-10 h-9 px-1.5 border border-slate-300 rounded-lg text-sm text-center" />
                     <span class="text-xs text-slate-500">%</span>
-                    <span class="absolute left-0 top-full mt-1 text-xs text-slate-400 whitespace-nowrap">
-                      Процент неустойки в договоре
-                    </span>
                   </div>
 
                   <select id="penalty-rate-type"
@@ -998,14 +1100,10 @@
 
                   <span class="text-xs text-slate-500 whitespace-nowrap shrink-0">, не более</span>
 
-                  <!-- Ограничение + подпись под инпутом (выровнена по правому краю, чтобы не уходить за карточку) -->
-                  <div class="relative shrink-0 flex items-center gap-1">
+                  <div class="shrink-0 flex items-center gap-1">
                     <input type="text" id="penalty-cap"
                       class="w-10 h-9 px-1.5 border border-slate-300 rounded-lg text-sm text-center" />
                     <span class="text-xs text-slate-500">%</span>
-                    <span class="absolute right-0 top-full mt-1 text-xs text-slate-400 whitespace-nowrap">
-                      от суммы долга
-                    </span>
                   </div>
                 </div>
               </div>
@@ -1492,7 +1590,8 @@
       </div>
     </section>
 
-  </main>
+    </main>
+  </div>
 
   <!-- Модальное окно: результат долгой операции (успех/ошибка) -->
   <div id="result-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-20">

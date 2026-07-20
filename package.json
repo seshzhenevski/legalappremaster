@@ -1,6 +1,6 @@
 {
   "name": "trivio-legal",
-  "version": "6.2.3",
+  "version": "6.3.2",
   "description": "Юридический инструментарий на Tauri 2 + Python",
   "scripts": {
     "tauri": "tauri",

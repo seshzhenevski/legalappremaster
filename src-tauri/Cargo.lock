@@ -3725,7 +3725,7 @@ dependencies = [
 
 [[package]]
 name = "trivio-legal"
-version = "6.2.3"
+version = "6.3.2"
 dependencies = [
  "serde",
  "serde_json",
