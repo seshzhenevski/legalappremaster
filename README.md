@@ -65,7 +65,7 @@ npm run dev             # запуск с горячей перезагрузк�
 ## Тесты
 
 ```bash
-npm run test:backend    # 88 тестов Python (логика + RPC-контракт)
+npm run test:backend    # 133 теста Python (логика + RPC-контракт)
 npm run test:frontend   # 8 тестов JS (форматирование)
 ```
 

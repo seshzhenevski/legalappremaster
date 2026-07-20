@@ -24,19 +24,19 @@ const DEFAULT_SPREADSHEET_ID = "1vYiCw-uciX63FizN8XELikp9xE_laj8Rq9dTfhSOE4Q";
 // янтарный (деньги под угрозой), проблемы с данными — серый и красный. Ключи —
 // это стадии из реестра, как их возвращает бэкенд.
 const STAGE_COLORS = {
-  "подготовка иска": "#38bdf8",
-  "процесс": "#2563eb",
+  "подготовка иска": "#7ca8ff",
+  "процесс": "#0055fe",
   "исполнительное пр-во": "#8b5cf6",
   "банкротство": "#f59e0b",
   "долг погашен": "#16a34a",
   // Списанный долг — красный: это не этап, а потерянные деньги.
   "невозвратная задолженность": "#dc2626",
   // Категории про качество данных — серые: они про реестр, а не про процесс.
-  "Статус не указан": "#cbd5e1",
-  "Статус не распознан": "#94a3b8",
+  "Статус не указан": "#d9d9d9",
+  "Статус не распознан": "#8f8f8f",
 };
-const DEFAULT_COLOR = "#2563eb";
-const STRUCTURE_COLORS = ["#2563eb", "#f59e0b", "#94a3b8"];
+const DEFAULT_COLOR = "#0055fe";
+const STRUCTURE_COLORS = ["#0055fe", "#f59e0b", "#8f8f8f"];
 
 // Прозрачность светлого тона стадии (~30%): им закрашен невзысканный остаток в
 // столбце сумм. Тон берётся от цвета самой стадии, а не задаётся отдельной
@@ -483,7 +483,7 @@ function renderDynamics(dynamics) {
         {
           label: "Требования",
           data: byYearAscending.map((year) => year.claimed),
-          backgroundColor: "#2563eb",
+          backgroundColor: "#0055fe",
           borderRadius: 6,
           yAxisID: "y",
           // Столбцы — на заднем плане. Chart.js рисует датасеты от большего
@@ -504,8 +504,8 @@ function renderDynamics(dynamics) {
           isMoney: false,
           data: byYearAscending.map((year) => year.cases_count),
           type: "line",
-          borderColor: "#0f172a",
-          backgroundColor: "#0f172a",
+          borderColor: "#0d0d0d",
+          backgroundColor: "#0d0d0d",
           tension: 0.3,
           yAxisID: "yCount",
           // Меньший order — кривую рисует последней, поверх столбцов.
@@ -931,7 +931,7 @@ function renderClaimsDynamics(dynamics) {
         {
           label: "Сумма претензий",
           data: byYearAscending.map((year) => year.claimed),
-          backgroundColor: "#0ea5e9",
+          backgroundColor: "#4d8afe",
           borderRadius: 6,
           yAxisID: "y",
           order: 2,
@@ -941,8 +941,8 @@ function renderClaimsDynamics(dynamics) {
           isMoney: false,
           data: byYearAscending.map((year) => year.claims_count),
           type: "line",
-          borderColor: "#0f172a",
-          backgroundColor: "#0f172a",
+          borderColor: "#0d0d0d",
+          backgroundColor: "#0d0d0d",
           tension: 0.3,
           yAxisID: "yCount",
           order: 1,
@@ -1025,7 +1025,7 @@ function renderWarnings(warnings) {
 
   block.classList.toggle("hidden", notes.length === 0);
   block.innerHTML = notes.length === 0 ? "" : `
-    <div class="dash-card-title text-amber-800">⚠️ Качество данных в реестре</div>
+    <div class="dash-card-title text-amber-800"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg> Качество данных в реестре</div>
     <ul class="text-sm text-amber-900 space-y-1 list-disc pl-5">
       ${notes.map((note) => `<li>${note}</li>`).join("")}
     </ul>`;

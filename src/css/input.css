@@ -1,3 +1,74 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+  ── Базовый слой нового дизайна ────────────────────────────────────────────
+  «Графит на белом» (design_new/DESIGN.md) + акцент #0055FE.
+  Здесь живёт то, что нельзя выразить классами Tailwind в разметке:
+  сглаживание углов, фокус-кольца, нативные контролы, иконки Lucide.
+*/
+@layer base {
+  :root {
+    --accent: #0055fe;          /* акцент приложения */
+    --accent-hover: #0043c9;
+    --accent-wash: #f0f5ff;     /* акцентная подложка */
+    --ink: #0d0d0d;             /* Graphite Ink */
+    --ink-secondary: #5d5d5d;   /* Mid Ash */
+    --ink-muted: #8f8f8f;       /* Hollow */
+    --hairline: rgba(0, 0, 0, 0.1);
+    --veil: rgba(0, 0, 0, 0.05);
+  }
+
+  /*
+    Сглаживание углов как в iOS (corner smoothing ≈ 60%): суперэллипс вместо
+    дуги. Поддерживается Chromium 139+ (WebView2 — evergreen); старые движки
+    просто рисуют обычные скругления — деградация незаметна.
+  */
+  @supports (corner-shape: squircle) {
+    * {
+      corner-shape: squircle;
+    }
+    /* Полные круги и пилюли остаются круглыми: сквиркл им не к лицу */
+    .rounded-full,
+    .thin-scroll::-webkit-scrollbar-thumb {
+      corner-shape: round;
+    }
+  }
+
+  /* Нативные чекбоксы, радио и прогресс красятся в акцент */
+  input[type="checkbox"],
+  input[type="radio"],
+  select,
+  progress {
+    accent-color: var(--accent);
+  }
+
+  /* Единое фокус-кольцо: акцентная обводка вместо дефолтной чёрной */
+  :where(button, a, select, [tabindex]):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  :where(input, textarea):focus {
+    outline: none;
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px rgba(0, 85, 254, 0.12);
+  }
+
+  /* Выделение текста — акцентное */
+  ::selection {
+    background: rgba(0, 85, 254, 0.18);
+  }
+}
+
+@layer components {
+  /*
+    Иконки Lucide, встроенные в разметку как inline-SVG (CSP script-src 'self'
+    запрещает CDN). currentColor наследует цвет текста строки.
+  */
+  .lucide {
+    display: inline-block;
+    vertical-align: -0.1875em;
+    flex-shrink: 0;
+  }
+}

@@ -34,11 +34,11 @@
       background: transparent;
     }
     .thin-scroll::-webkit-scrollbar-thumb {
-      background-color: #cbd5e1;
+      background-color: #d9d9d9;
       border-radius: 9999px;
     }
     .thin-scroll::-webkit-scrollbar-thumb:hover {
-      background-color: #94a3b8;
+      background-color: #b3b3b3;
     }
 
     /*
@@ -60,31 +60,65 @@
       padding-right: 6px;
     }
 
+    /*
+      «Карточка всегда закрыта». У каждого блока прокручиваемой колонки есть
+      липкие «крышки» сверху и снизу: узкие полоски с бордером и скруглением,
+      в покое пиксель в пиксель совпадающие с рамкой самой карточки (поэтому
+      невидимые). При прокрутке крышка прилипает к краю видимой области — и
+      контент уходит ПОД собственный край карточки: обрезанный блок выглядит
+      цельной закрытой карточкой со своим бордером, а не грубым срезом.
+      Геометрия: p-5 (20px) + бордер 1px ⇒ вынос крышки на 21px за контент;
+      высота 12px накрывает дугу скругления (10px); вертикальные поля
+      компенсируют высоту, чтобы крышки не занимали места в потоке.
+    */
+    .form-scroll > div::before,
+    .form-scroll > div::after {
+      content: "";
+      display: block;
+      position: sticky;
+      height: 12px;
+      background: #ffffff;
+      border: 1px solid #e6e6e6;
+      z-index: 1;
+    }
+    .form-scroll > div::before {
+      top: 0;
+      margin: -21px -21px 9px;
+      border-bottom: 0;
+      border-radius: 10px 10px 0 0;
+    }
+    .form-scroll > div::after {
+      bottom: 0;
+      margin: 9px -21px -21px;
+      border-top: 0;
+      border-radius: 0 0 10px 10px;
+    }
+
     /* Индикатор выполнения (определённый) — заполняется по реальному проценту готовности */
     .progress-bar-track {
       position: relative;
       height: 6px;
       border-radius: 3px;
-      background: #e2e8f0;
+      background: #ececec;
       overflow: hidden;
     }
     .progress-bar-fill {
       height: 100%;
       width: 0%;
-      background: #2563eb;
+      background: #0055fe;
       border-radius: 3px;
       transition: width 0.25s ease;
     }
 
     /* Зона drag-and-drop для Excel-файлов */
     .drop-zone {
-      border: 1px dashed #cbd5e1;
-      border-radius: 0.5rem;
+      border: 1px dashed #d0d0d0;
+      border-radius: 10px;
       transition: border-color 0.15s ease, background-color 0.15s ease;
     }
     .drop-zone.drop-zone-active {
-      border-color: #2563eb;
-      background-color: #eff6ff;
+      border-color: #0055fe;
+      background-color: #f0f5ff;
     }
 
     /*
@@ -100,8 +134,8 @@
       flex-direction: column;
       flex-shrink: 0;
       width: 64px;
-      background: #ffffff;
-      border-right: 1px solid #e2e8f0;
+      background: #f9f9f9;
+      border-right: 1px solid rgba(0, 0, 0, 0.08);
       overflow: hidden;
       transition: width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
     }
@@ -122,7 +156,7 @@
       margin: 0 8px;
       padding: 0 12px;
       border-radius: 10px;
-      color: #475569;
+      color: #5d5d5d;
       cursor: pointer;
       white-space: nowrap;
       text-align: left;
@@ -131,16 +165,16 @@
     .sidebar-toggle {
       margin-top: 8px;
       margin-bottom: 4px;
-      color: #64748b;
+      color: #8f8f8f;
     }
     .sidebar-toggle:hover,
     .sidebar-item:hover {
-      background: #f1f5f9;
-      color: #0f172a;
+      background: rgba(0, 0, 0, 0.05);
+      color: #0d0d0d;
     }
     .sidebar-item.tab-active {
-      background: #eff6ff;
-      color: #2563eb;
+      background: #f0f5ff;
+      color: #0055fe;
     }
 
     .sidebar-icon,
@@ -191,7 +225,7 @@
       gap: 2px;
       padding-top: 4px;
       margin-top: 4px;
-      border-top: 1px solid #f1f5f9;
+      border-top: 1px solid rgba(0, 0, 0, 0.06);
     }
 
     /*
@@ -214,9 +248,8 @@
     .dash-card {
       position: relative;
       background: #ffffff;
-      border: 1px solid #e2e8f0;
-      border-radius: 0.75rem;
-      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      border-radius: 10px;
       padding: 1.25rem;
     }
     /*
@@ -230,18 +263,18 @@
     .dash-card-title {
       font-size: 0.875rem;
       font-weight: 600;
-      color: #334155;
+      color: #0d0d0d;
       margin-bottom: 0.75rem;
     }
     .dash-section-title {
       font-size: 1rem;
       font-weight: 700;
-      color: #334155;
+      color: #0d0d0d;
       padding-top: 0.5rem;
     }
     .dash-kpi-label {
       font-size: 0.75rem;
-      color: #64748b;
+      color: #5d5d5d;
     }
     /*
       Плитка — контейнер запроса: кегль значения считается от ширины самой
@@ -261,13 +294,13 @@
       font-size: clamp(0.8rem, 12cqi, 1.75rem);
       font-weight: 700;
       line-height: 1.2;
-      color: #0f172a;
+      color: #0d0d0d;
       margin-top: 0.25rem;
       white-space: nowrap;
       /* Цифры не «прыгают» по ширине во время анимации набора значения */
       font-variant-numeric: tabular-nums;
     }
-    .dash-kpi-accent { color: #2563eb; }
+    .dash-kpi-accent { color: #0055fe; }
     .dash-kpi-success { color: #16a34a; }
 
     /*
@@ -287,15 +320,15 @@
     .dash-table th {
       text-align: left;
       font-weight: 500;
-      color: #64748b;
+      color: #5d5d5d;
       padding: 0.375rem 0.5rem;
-      border-bottom: 1px solid #e2e8f0;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.1);
       white-space: nowrap;
     }
     .dash-table td {
       padding: 0.5rem;
-      border-bottom: 1px solid #f1f5f9;
-      color: #334155;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+      color: #0d0d0d;
     }
     .dash-table td.dash-num {
       text-align: right;
@@ -315,8 +348,8 @@
       width: 14px;
       height: 14px;
       border-radius: 9999px;
-      border: 1px solid #cbd5e1;
-      color: #94a3b8;
+      border: 1px solid #d0d0d0;
+      color: #8f8f8f;
       font-size: 9px;
       font-style: italic;
       font-weight: 700;
@@ -325,8 +358,8 @@
     }
     .dash-info:hover,
     .dash-info:focus-visible {
-      color: #2563eb;
-      border-color: #2563eb;
+      color: #0055fe;
+      border-color: #0055fe;
       outline: none;
     }
     .dash-info-bubble {
@@ -346,15 +379,14 @@
       width: 17rem;
       max-width: 78vw;
       padding: 0.625rem 0.75rem;
-      background: #0f172a;
-      color: #f8fafc;
+      background: #000000;
+      color: #ffffff;
       font-size: 0.75rem;
       font-style: normal;
       font-weight: 400;
       line-height: 1.35;
       text-align: left;
-      border-radius: 0.5rem;
-      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.28);
+      border-radius: 10px;
       opacity: 0;
       transform: translateY(-4px);
       pointer-events: none;
@@ -390,16 +422,16 @@
     /* Карточка года — кликабельная плитка, ведёт на экран этого года */
     .dash-year-card {
       text-align: left;
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 0.75rem;
+      background: #f9f9f9;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      border-radius: 10px;
       padding: 0.875rem 1rem;
       transition: border-color 0.15s ease, background-color 0.15s ease,
                   transform 0.15s ease;
     }
     .dash-year-card:hover {
-      border-color: #2563eb;
-      background: #eff6ff;
+      border-color: #0055fe;
+      background: #f0f5ff;
       transform: translateY(-1px);
     }
 
@@ -418,10 +450,10 @@
 
     /* Скелетоны на время загрузки — вместо пустого экрана */
     .dash-skeleton {
-      background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 37%, #f1f5f9 63%);
+      background: linear-gradient(90deg, #f2f2f2 25%, #e9e9e9 37%, #f2f2f2 63%);
       background-size: 400% 100%;
       animation: dash-shimmer 1.2s ease-in-out infinite;
-      border-radius: 0.5rem;
+      border-radius: 10px;
     }
     @keyframes dash-shimmer {
       from { background-position: 100% 50%; }
@@ -590,32 +622,32 @@
       <nav class="sidebar-nav">
         <button data-tab-target="panel-lawsuit" type="button"
           class="sidebar-item" title="Генератор искового заявления">
-          <span class="sidebar-icon" aria-hidden="true">📝</span>
+          <span class="sidebar-icon" aria-hidden="true"><svg class="lucide" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18" /> <path d="m19 8 3 8a5 5 0 0 1-6 0zV7" /> <path d="M3 7h1a17 17 0 0 0 8-2 17 17 0 0 0 8 2h1" /> <path d="m5 8 3 8a5 5 0 0 1-6 0zV7" /> <path d="M7 21h10" /></svg></span>
           <span class="sidebar-label">Генератор искового заявления</span>
         </button>
         <button data-tab-target="panel-claim" type="button"
           class="sidebar-item" title="Генератор претензий">
-          <span class="sidebar-icon" aria-hidden="true">📨</span>
+          <span class="sidebar-icon" aria-hidden="true"><svg class="lucide" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7" /> <rect x="2" y="4" width="20" height="16" rx="2" /></svg></span>
           <span class="sidebar-label">Генератор претензий</span>
         </button>
         <button data-tab-target="panel-sorter" type="button"
           class="sidebar-item" title="Сортировщик документов">
-          <span class="sidebar-icon" aria-hidden="true">📁</span>
+          <span class="sidebar-icon" aria-hidden="true"><svg class="lucide" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" /></svg></span>
           <span class="sidebar-label">Сортировщик документов</span>
         </button>
         <button data-tab-target="panel-penalty" type="button"
           class="sidebar-item" title="Калькулятор неустойки">
-          <span class="sidebar-icon" aria-hidden="true">💰</span>
+          <span class="sidebar-icon" aria-hidden="true"><svg class="lucide" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="19" x2="5" y1="5" y2="19" /> <circle cx="6.5" cy="6.5" r="2.5" /> <circle cx="17.5" cy="17.5" r="2.5" /></svg></span>
           <span class="sidebar-label">Калькулятор неустойки</span>
         </button>
         <button data-tab-target="panel-duty" type="button"
           class="sidebar-item" title="Калькулятор госпошлины">
-          <span class="sidebar-icon" aria-hidden="true">🏛</span>
+          <span class="sidebar-icon" aria-hidden="true"><svg class="lucide" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 18v-7" /> <path d="M11.119 2.205a2 2 0 0 1 1.762 0l7.84 3.846A.5.5 0 0 1 20.5 7h-17a.5.5 0 0 1-.22-.949z" /> <path d="M14 18v-7" /> <path d="M18 18v-7" /> <path d="M3 22h18" /> <path d="M6 18v-7" /></svg></span>
           <span class="sidebar-label">Калькулятор госпошлины</span>
         </button>
         <button data-tab-target="panel-dashboard" type="button"
           class="sidebar-item" title="Дашборд">
-          <span class="sidebar-icon" aria-hidden="true">📊</span>
+          <span class="sidebar-icon" aria-hidden="true"><svg class="lucide" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16" /> <path d="M18 17V9" /> <path d="M13 17V5" /> <path d="M8 17v-3" /></svg></span>
           <span class="sidebar-label">Дашборд</span>
         </button>
       </nav>
@@ -633,7 +665,7 @@
 
             <!-- Ответчик -->
             <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
-              <div class="flex items-center gap-2 font-medium text-slate-700">🏢 Ответчик</div>
+              <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 12h4" /> <path d="M10 8h4" /> <path d="M14 21v-3a2 2 0 0 0-4 0v3" /> <path d="M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2" /> <path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16" /></svg> Ответчик</div>
               <div class="border-t border-slate-100 pt-3 space-y-3">
                 <div class="flex gap-2">
                   <input type="text" id="lawsuit-defendant-inn" placeholder="ИНН (10 или 12 цифр)"
@@ -641,7 +673,7 @@
                   <button id="lawsuit-inn-search-button"
                     class="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm whitespace-nowrap
                            flex items-center gap-1.5">
-                    🔍 Найти
+                    <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 21-4.34-4.34" /> <circle cx="11" cy="11" r="8" /></svg> Найти
                   </button>
                 </div>
 
@@ -656,7 +688,7 @@
 
             <!-- Претензия -->
             <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
-              <div class="flex items-center gap-2 font-medium text-slate-700">📨 Претензия</div>
+              <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7" /> <rect x="2" y="4" width="20" height="16" rx="2" /></svg> Претензия</div>
               <div class="border-t border-slate-100 pt-3 grid grid-cols-2 gap-3">
                 <div>
                   <label class="block text-xs text-slate-500 mb-1">Номер претензии</label>
@@ -671,8 +703,11 @@
             </div>
 
             <!-- Финансы -->
-            <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3 overflow-x-hidden">
-              <div class="flex items-center gap-2 font-medium text-slate-700">💰 Финансы</div>
+            <!-- overflow-x прижат на внутреннем контейнере, а не на карточке:
+                 overflow на самой карточке делает её scroll-контейнером и
+                 ломает липкие «крышки» (position: sticky) её краёв. -->
+            <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+              <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" /> <path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4" /></svg> Финансы</div>
               <div class="border-t border-slate-100 pt-3 space-y-3 overflow-x-hidden">
                 <div class="flex items-center gap-2">
                   <label class="text-xs text-slate-600 whitespace-nowrap shrink-0">Почтовые расходы:</label>
@@ -696,7 +731,7 @@
 
             <!-- Файлы -->
             <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
-              <div class="flex items-center gap-2 font-medium text-slate-700">📂 Файлы</div>
+              <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></svg> Файлы</div>
               <div class="border-t border-slate-100 pt-3 space-y-3">
                 <div>
                   <label class="block text-xs text-slate-500 mb-1">
@@ -745,12 +780,12 @@
 
           <!-- Действия (не прокручивается) -->
           <div class="shrink-0 actions-card bg-white rounded-xl border border-slate-200 p-5 space-y-3">
-            <div class="flex items-center gap-2 font-medium text-slate-700">⚙️ Действия</div>
+            <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" /></svg> Действия</div>
             <div class="border-t border-slate-100 pt-3 space-y-2">
               <button id="lawsuit-generate-button"
                 class="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700
                        text-white text-sm font-medium py-2.5 px-4 rounded-lg">
-                📝 Сформировать иск
+                <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" /> <path d="M14 2v5a1 1 0 0 0 1 1h5" /> <path d="M10 9H8" /> <path d="M16 13H8" /> <path d="M16 17H8" /></svg> Сформировать иск
               </button>
               <button id="lawsuit-clear-button"
                 class="w-full border border-slate-300 hover:bg-slate-50 text-slate-700
@@ -767,7 +802,7 @@
         <!-- Правая колонка: Процесс формирования -->
         <div class="bg-white rounded-xl border border-slate-200 p-5 flex flex-col h-full min-h-0 space-y-3">
           <div class="shrink-0 flex items-center gap-2 font-medium text-slate-700">
-            📊 Процесс формирования
+            <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2" /></svg> Процесс формирования
           </div>
           <div id="lawsuit-log"
             class="flex-1 min-h-0 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg p-3
@@ -791,7 +826,7 @@
 
             <!-- Должник -->
             <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
-              <div class="flex items-center gap-2 font-medium text-slate-700">🏢 Должник</div>
+              <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 12h4" /> <path d="M10 8h4" /> <path d="M14 21v-3a2 2 0 0 0-4 0v3" /> <path d="M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2" /> <path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16" /></svg> Должник</div>
               <div class="border-t border-slate-100 pt-3 space-y-3">
                 <div class="flex gap-2">
                   <input type="text" id="claim-debtor-inn" placeholder="ИНН (10 или 12 цифр)"
@@ -799,7 +834,7 @@
                   <button id="claim-inn-search-button"
                     class="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm whitespace-nowrap
                            flex items-center gap-1.5">
-                    🔍 Найти
+                    <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 21-4.34-4.34" /> <circle cx="11" cy="11" r="8" /></svg> Найти
                   </button>
                 </div>
 
@@ -814,7 +849,7 @@
 
             <!-- Претензия -->
             <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
-              <div class="flex items-center gap-2 font-medium text-slate-700">📨 Претензия</div>
+              <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7" /> <rect x="2" y="4" width="20" height="16" rx="2" /></svg> Претензия</div>
               <div class="border-t border-slate-100 pt-3 grid grid-cols-2 gap-3">
                 <div>
                   <label class="block text-xs text-slate-500 mb-1">Номер претензии</label>
@@ -839,7 +874,7 @@
 
             <!-- Долг и файлы -->
             <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
-              <div class="flex items-center gap-2 font-medium text-slate-700">💰 Долг и файлы</div>
+              <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" /> <path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4" /></svg> Долг и файлы</div>
               <div class="border-t border-slate-100 pt-3 space-y-3">
                 <div class="flex items-center gap-2">
                   <label class="text-xs text-slate-600 whitespace-nowrap shrink-0">Сумма долга:</label>
@@ -877,12 +912,12 @@
 
           <!-- Действия (не прокручивается) -->
           <div class="shrink-0 actions-card bg-white rounded-xl border border-slate-200 p-5 space-y-3">
-            <div class="flex items-center gap-2 font-medium text-slate-700">⚙️ Действия</div>
+            <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" /></svg> Действия</div>
             <div class="border-t border-slate-100 pt-3 space-y-2">
               <button id="claim-generate-button"
                 class="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700
                        text-white text-sm font-medium py-2.5 px-4 rounded-lg">
-                🚀 Сгенерировать
+                <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z" /></svg> Сгенерировать
               </button>
               <button id="claim-clear-button"
                 class="w-full border border-slate-300 hover:bg-slate-50 text-slate-700
@@ -899,7 +934,7 @@
         <!-- Правая колонка: Процесс формирования -->
         <div class="bg-white rounded-xl border border-slate-200 p-5 flex flex-col h-full min-h-0 space-y-3">
           <div class="shrink-0 flex items-center gap-2 font-medium text-slate-700">
-            📊 Процесс формирования
+            <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2" /></svg> Процесс формирования
           </div>
           <div id="claim-log"
             class="flex-1 min-h-0 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg p-3
@@ -910,16 +945,16 @@
           </button>
           <div class="shrink-0 flex gap-2">
             <button id="claim-download-docx-button" disabled
-              class="flex-1 flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-800
+              class="flex-1 flex items-center justify-center gap-2 bg-slate-700 hover:bg-black
                      text-white text-sm font-medium py-2.5 px-4 rounded-lg
                      disabled:opacity-40 disabled:cursor-not-allowed">
-              ⬇️ Скачать DOCX
+              <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3" /> <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /> <path d="m7 10 5 5 5-5" /></svg> Скачать DOCX
             </button>
             <button id="claim-download-pdf-button" disabled
               class="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700
                      text-white text-sm font-medium py-2.5 px-4 rounded-lg
                      disabled:opacity-40 disabled:cursor-not-allowed">
-              ⬇️ Скачать PDF
+              <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3" /> <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /> <path d="m7 10 5 5 5-5" /></svg> Скачать PDF
             </button>
           </div>
         </div>
@@ -935,7 +970,7 @@
           <div class="flex-1 min-h-0 form-scroll thin-scroll space-y-4">
             <!-- Шаг 1 -->
             <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
-              <div class="flex items-center gap-2 font-medium text-slate-700">📂 Шаг 1: Выбор папок</div>
+              <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></svg> Шаг 1: Выбор папок</div>
               <div class="border-t border-slate-100 pt-3 space-y-3">
                 <div class="flex gap-2">
                   <input type="text" id="sorter-source-path" readonly placeholder="Папка с исходными PDF"
@@ -955,10 +990,10 @@
             <!-- Шаг 2 -->
             <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
               <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2 font-medium text-slate-700">📋 Шаг 2: Данные о счетах</div>
+                <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1" /> <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /> <path d="M12 11h4" /> <path d="M12 16h4" /> <path d="M8 11h.01" /> <path d="M8 16h.01" /></svg> Шаг 2: Данные о счетах</div>
                 <button id="sorter-load-file-button"
                   class="text-sm text-blue-600 hover:text-blue-700 whitespace-nowrap ml-2">
-                  📄 Загрузить из файла
+                  <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12" /> <path d="m17 8-5-5-5 5" /> <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /></svg> Загрузить из файла
                 </button>
               </div>
               <div class="border-t border-slate-100 pt-3 space-y-2">
@@ -971,7 +1006,7 @@
 
             <!-- Настройки и запуск -->
             <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
-              <div class="flex items-center gap-2 font-medium text-slate-700">⚙️ Настройки и запуск</div>
+              <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" /> <circle cx="12" cy="12" r="3" /></svg> Настройки и запуск</div>
               <div class="border-t border-slate-100 pt-3 space-y-1">
                 <label class="flex items-center gap-2 text-sm">
                   <input type="checkbox" id="sorter-check-integrity" checked />
@@ -987,12 +1022,12 @@
 
           <!-- Действия (не прокручивается) -->
           <div class="shrink-0 actions-card bg-white rounded-xl border border-slate-200 p-5 space-y-3">
-            <div class="flex items-center gap-2 font-medium text-slate-700">⚙️ Действия</div>
+            <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" /></svg> Действия</div>
             <div class="border-t border-slate-100 pt-3 space-y-2">
               <button id="sorter-run-button"
                 class="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700
                        text-white text-sm font-medium py-2.5 px-4 rounded-lg">
-                🚀 Начать обработку
+                <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z" /></svg> Начать обработку
               </button>
               <div class="flex gap-2">
                 <button id="sorter-clear-button"
@@ -1015,7 +1050,7 @@
 
         <!-- Правая колонка: Процесс обработки -->
         <div class="bg-white rounded-xl border border-slate-200 p-5 flex flex-col h-full min-h-0 space-y-3">
-          <div class="shrink-0 flex items-center gap-2 font-medium text-slate-700">📊 Процесс обработки</div>
+          <div class="shrink-0 flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2" /></svg> Процесс обработки</div>
           <div id="sorter-log"
             class="flex-1 min-h-0 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg p-3
                    overflow-y-auto thin-scroll space-y-0.5"></div>
@@ -1050,7 +1085,7 @@
           <div class="flex-1 min-h-0 form-scroll thin-scroll space-y-4">
             <!-- Сумма задолженности и период -->
             <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
-              <div class="flex items-center gap-2 font-medium text-slate-700">💰 Сумма задолженности и период</div>
+              <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" /> <path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4" /></svg> Сумма задолженности и период</div>
               <div class="border-t border-slate-100 pt-3 space-y-3">
                 <div id="penalty-excel-drop-zone" class="drop-zone flex items-center justify-between p-2">
                   <label class="text-xs text-slate-500">
@@ -1058,7 +1093,7 @@
                   </label>
                   <button id="penalty-import-excel-button"
                     class="text-sm text-blue-600 hover:text-blue-700 whitespace-nowrap ml-2">
-                    📂 Excel
+                    <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" /> <path d="M14 2v5a1 1 0 0 0 1 1h5" /> <path d="M8 13h2" /> <path d="M14 13h2" /> <path d="M8 17h2" /> <path d="M14 17h2" /></svg> Excel
                   </button>
                 </div>
                 <div id="penalty-debts-container"></div>
@@ -1076,7 +1111,7 @@
 
             <!-- Ставка неустойки -->
             <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
-              <div class="flex items-center gap-2 font-medium text-slate-700">📈 Ставка неустойки</div>
+              <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 7h6v6" /> <path d="m22 7-8.5 8.5-5-5L2 17" /></svg> Ставка неустойки</div>
               <div class="border-t border-slate-100 pt-3">
                 <!--
                   Компактный ряд управляющих элементов. flex-wrap — при узком
@@ -1111,7 +1146,7 @@
 
             <!-- Частичная оплата -->
             <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-2">
-              <div class="flex items-center gap-2 font-medium text-slate-700">➖ Частичная оплата</div>
+              <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10" /> <path d="M8 12h8" /></svg> Частичная оплата</div>
               <div class="border-t border-slate-100 pt-3 space-y-2">
                 <div id="penalty-payments-container"></div>
                 <button id="penalty-add-payment-button"
@@ -1124,12 +1159,12 @@
 
           <!-- Действия (не прокручивается) -->
           <div class="shrink-0 actions-card bg-white rounded-xl border border-slate-200 p-5 space-y-3">
-            <div class="flex items-center gap-2 font-medium text-slate-700">⚙️ Действия</div>
+            <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" /></svg> Действия</div>
             <div class="border-t border-slate-100 pt-3 space-y-2">
               <button id="penalty-calculate-button"
                 class="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700
                        text-white text-sm font-medium py-2.5 px-4 rounded-lg">
-                🚀 Рассчитать
+                <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="16" height="20" x="4" y="2" rx="2" /> <line x1="8" x2="16" y1="6" y2="6" /> <line x1="16" x2="16" y1="14" y2="18" /> <path d="M16 10h.01" /> <path d="M12 10h.01" /> <path d="M8 10h.01" /> <path d="M12 14h.01" /> <path d="M8 14h.01" /> <path d="M12 18h.01" /> <path d="M8 18h.01" /></svg> Рассчитать
               </button>
               <button id="penalty-clear-button"
                 class="w-full border border-slate-300 hover:bg-slate-50 text-slate-700
@@ -1143,10 +1178,10 @@
         <!-- Правая колонка: Результат расчёта -->
         <div class="bg-white rounded-xl border border-slate-200 p-5 flex flex-col h-full min-h-0 space-y-3">
           <div class="shrink-0 flex items-center justify-between">
-            <div class="flex items-center gap-2 font-medium text-slate-700">📊 Результат расчёта</div>
+            <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18" /> <rect width="18" height="18" x="3" y="3" rx="2" /> <path d="M3 9h18" /> <path d="M3 15h18" /></svg> Результат расчёта</div>
             <button id="penalty-copy-table-button"
               class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm whitespace-nowrap">
-              📋 Копировать таблицу
+              <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /> <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></svg> Копировать таблицу
             </button>
           </div>
 
@@ -1188,7 +1223,7 @@
 
         <!-- Левая колонка -->
         <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3 flex flex-col">
-          <div class="flex items-center gap-2 font-medium text-slate-700">🏛 Стороны и сумма иска</div>
+          <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /> <path d="M16 3.128a4 4 0 0 1 0 7.744" /> <path d="M22 21v-2a4 4 0 0 0-3-3.87" /> <circle cx="9" cy="7" r="4" /></svg> Стороны и сумма иска</div>
           <div class="border-t border-slate-100 pt-3 space-y-3">
             <div>
               <label class="block text-xs text-slate-500 mb-1">Сумма иска, ₽</label>
@@ -1209,7 +1244,7 @@
 
         <!-- Правая колонка -->
         <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3 flex flex-col">
-          <div class="flex items-center gap-2 font-medium text-slate-700">🧾 Госпошлина</div>
+          <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17V7" /> <path d="M16 8h-6a2 2 0 0 0 0 4h4a2 2 0 0 1 0 4H8" /> <path d="M4 3a1 1 0 0 1 1-1 1.3 1.3 0 0 1 .7.2l.933.6a1.3 1.3 0 0 0 1.4 0l.934-.6a1.3 1.3 0 0 1 1.4 0l.933.6a1.3 1.3 0 0 0 1.4 0l.933-.6a1.3 1.3 0 0 1 1.4 0l.934.6a1.3 1.3 0 0 0 1.4 0l.933-.6A1.3 1.3 0 0 1 19 2a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1 1.3 1.3 0 0 1-.7-.2l-.933-.6a1.3 1.3 0 0 0-1.4 0l-.934.6a1.3 1.3 0 0 1-1.4 0l-.933-.6a1.3 1.3 0 0 0-1.4 0l-.933.6a1.3 1.3 0 0 1-1.4 0l-.934-.6a1.3 1.3 0 0 0-1.4 0l-.933.6a1.3 1.3 0 0 1-.7.2 1 1 0 0 1-1-1z" /></svg> Госпошлина</div>
           <div class="border-t border-slate-100 pt-3 space-y-3">
             <div>
               <label class="block text-xs text-slate-500 mb-1">Госпошлина, ₽</label>
@@ -1229,18 +1264,18 @@
 
         <!-- Действия (во всю ширину, не растягивается) -->
         <div class="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-5 space-y-3">
-          <div class="flex items-center gap-2 font-medium text-slate-700">⚙️ Действия</div>
+          <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" /></svg> Действия</div>
           <div class="border-t border-slate-100 pt-3 space-y-2">
             <div class="flex gap-2">
               <button id="duty-calculate-button"
                 class="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700
                        text-white text-sm font-medium py-2.5 px-4 rounded-lg">
-                🚀 Рассчитать
+                <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="16" height="20" x="4" y="2" rx="2" /> <line x1="8" x2="16" y1="6" y2="6" /> <line x1="16" x2="16" y1="14" y2="18" /> <path d="M16 10h.01" /> <path d="M12 10h.01" /> <path d="M8 10h.01" /> <path d="M12 14h.01" /> <path d="M8 14h.01" /> <path d="M12 18h.01" /> <path d="M8 18h.01" /></svg> Рассчитать
               </button>
               <button id="duty-generate-pdf-button"
-                class="flex-1 flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-800
+                class="flex-1 flex items-center justify-center gap-2 bg-slate-700 hover:bg-black
                        text-white text-sm font-medium py-2.5 px-4 rounded-lg">
-                📄 Сформировать PDF
+                <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" /> <path d="M14 2v5a1 1 0 0 0 1 1h5" /> <path d="M12 18v-6" /> <path d="m9 15 3 3 3-3" /></svg> Сформировать PDF
               </button>
             </div>
             <button id="duty-clear-button"
@@ -1264,7 +1299,7 @@
           <button id="dashboard-back-button"
             class="hidden border border-slate-300 hover:bg-white text-slate-700
                    text-sm font-medium py-2 px-3 rounded-lg">
-            ← Назад
+            <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7" /> <path d="M19 12H5" /></svg> Назад
           </button>
           <div class="mr-auto">
             <div id="dashboard-title" class="font-semibold text-slate-800">Судебные дела · все годы</div>
@@ -1277,17 +1312,17 @@
           <button id="dashboard-refresh-button"
             class="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700
                    text-white text-sm font-medium py-2 px-4 rounded-lg">
-            🚀 Обновить
+            <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /> <path d="M21 3v5h-5" /> <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /> <path d="M8 16H3v5" /></svg> Обновить
           </button>
           <button id="dashboard-pdf-button"
-            class="flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-800
+            class="flex items-center justify-center gap-2 bg-slate-700 hover:bg-black
                    text-white text-sm font-medium py-2 px-4 rounded-lg">
-            📄 Выгрузить в PDF
+            <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" /> <path d="M14 2v5a1 1 0 0 0 1 1h5" /> <path d="M12 18v-6" /> <path d="m9 15 3 3 3-3" /></svg> Выгрузить в PDF
           </button>
           <button id="dashboard-settings-button"
             class="border border-slate-300 hover:bg-white text-slate-700
                    text-sm font-medium py-2 px-3 rounded-lg">
-            ⚙️ Настройки
+            <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" /> <circle cx="12" cy="12" r="3" /></svg> Настройки
           </button>
         </div>
 
@@ -1302,7 +1337,7 @@
 
         <!-- Настройки доступа к таблице -->
         <div id="dashboard-settings" class="hidden dashboard-toolbar bg-white rounded-xl border border-slate-200 p-5 space-y-3 mb-4">
-          <div class="flex items-center gap-2 font-medium text-slate-700">🔐 Доступ к Google-таблице</div>
+          <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /> <path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg> Доступ к Google-таблице</div>
           <div class="border-t border-slate-100 pt-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
             <div>
               <label class="block text-xs text-slate-500 mb-1">JSON-ключ сервисного аккаунта</label>
@@ -1594,7 +1629,7 @@
   </div>
 
   <!-- Модальное окно: результат долгой операции (успех/ошибка) -->
-  <div id="result-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-20">
+  <div id="result-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-6 z-20">
     <div class="bg-white rounded-2xl p-8 max-w-sm w-full text-center space-y-4">
       <div id="result-modal-icon" class="mx-auto w-16 h-16 rounded-full flex items-center justify-center text-3xl"></div>
       <div id="result-modal-title" class="text-lg font-semibold text-slate-800"></div>
@@ -1607,7 +1642,7 @@
   </div>
 
   <!-- Модальное окно: настройка ключа DaData -->
-  <div id="dadata-key-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-10">
+  <div id="dadata-key-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-6 z-10">
     <div class="bg-white rounded-xl border border-slate-200 p-6 max-w-md w-full space-y-3">
       <h3 class="font-semibold">Настройка ключа DaData</h3>
       <p class="text-sm text-slate-600">
@@ -1636,7 +1671,7 @@
   </div>
 
   <!-- Модальное окно: справка сортировщика -->
-  <div id="sorter-help-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-10">
+  <div id="sorter-help-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-6 z-10">
     <div class="bg-white rounded-xl border border-slate-200 p-6 max-w-lg w-full space-y-3">
       <h3 class="font-semibold">Справка: Сортировщик документов</h3>
       <p class="text-sm text-slate-600">

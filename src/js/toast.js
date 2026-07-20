@@ -19,8 +19,8 @@ export function showToast(message, durationMs = 2000) {
     toastElement = document.createElement("div");
     toastElement.id = "app-toast";
     toastElement.className =
-      "fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-sm " +
-      "px-4 py-2 rounded-lg shadow-lg opacity-0 pointer-events-none transition-opacity " +
+      "fixed bottom-6 left-1/2 -translate-x-1/2 bg-black text-white text-sm " +
+      "px-4 py-2 rounded-lg opacity-0 pointer-events-none transition-opacity " +
       "duration-200 z-30";
     document.body.appendChild(toastElement);
   }

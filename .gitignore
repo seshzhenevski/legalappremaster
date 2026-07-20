@@ -35,6 +35,25 @@ sheets-*.json
 # Выгрузка рабочей таблицы (живые данные контрагентов) — только для сверки.
 Trivio Legal.xlsx
 
+# Факсимиле подписи и печати — приватные данные, в репозиторий не попадают.
+# Приложение читает их только как base64 из legal_tools/assets/embedded.py,
+# файлы на диске кодом не используются.
+signature.jpg
+stamp.jpg
+
+# Иконки мобильных платформ и macOS, которые генерирует `npm run tauri icon`.
+# Сборка Windows-only (targets: nsis, msi) использует только icons/32x32.png,
+# icons/128x128.png и icons/icon.ico — остальное не коммитим.
+src-tauri/icons/android/
+src-tauri/icons/ios/
+src-tauri/icons/*.icns
+src-tauri/icons/Square*
+src-tauri/icons/StoreLogo.png
+
+# Отчёты Совета LLM — рабочие документы аудита, не для публикации.
+council-*.md
+council-*.html
+
 # ОС/редактор
 .DS_Store
 Thumbs.db

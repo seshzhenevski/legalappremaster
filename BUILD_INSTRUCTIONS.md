@@ -234,12 +234,18 @@ src-tauri\target\release\bundle\
 коллегам, замените их на настоящие:
 
 1. Подготовьте квадратную картинку-логотип в формате PNG, минимум 512×512
-   пикселей, назовите `app-icon.png` и положите в папку проекта.
+   пикселей, назовите `app-icon.png` и положите в папку `design\`.
 2. Выполните команду (она сгенерирует все нужные размеры автоматически):
 
    ```powershell
-   npm run tauri icon app-icon.png
+   npm run tauri icon design/app-icon.png
    ```
+
+   > **Примечание.** Команда генерирует и иконки для Android/iOS/macOS
+   > (`src-tauri\icons\android\`, `ios\`, `icon.icns`, `Square*`, `StoreLogo.png`).
+   > Приложение собирается только под Windows и использует лишь три файла:
+   > `icons\32x32.png`, `icons\128x128.png`, `icons\icon.ico`. Лишние иконки
+   > удалены из репозитория и внесены в `.gitignore` — коммитить их не нужно.
 
 3. Пересоберите приложение (Шаг 5).
 
