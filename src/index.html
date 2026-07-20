@@ -1265,17 +1265,32 @@
                     сумма колонки «Долг погашен» ÷ сумма требований × 100 %.
                     Требования — это колонка «Сумма», а если она пуста —
                     ПДЗ + неустойка + судебные расходы.
+                    Вторая строка — тот же возврат к основному долгу (ПДЗ),
+                    без неустойки и судебных расходов.
                     Считается по всем делам выбранного периода, включая те,
                     где взыскание ещё не началось.
                   </span>
                 </span>
               </div>
               <div id="kpi-recovery-percent" class="dash-kpi-value">—</div>
+              <div id="kpi-recovery-percent-principal" class="text-xs text-slate-400 mt-1">&nbsp;</div>
             </div>
             <div class="dash-card dash-kpi">
-              <div class="dash-kpi-label">Средний срок рассмотрения</div>
+              <div class="dash-kpi-label flex items-center gap-1">
+                Средний срок рассмотрения
+                <span class="dash-info" tabindex="0">
+                  i
+                  <span class="dash-info-bubble">
+                    Общий срок — от даты «В работе» до даты решения.
+                    Срок подготовки иска — от даты «В работе» (столбец D) до
+                    даты «Передано в суд» (столбец E).
+                    Каждый показатель усредняется только по делам, где обе
+                    нужные даты заполнены, — прочие дела среднее не искажают.
+                  </span>
+                </span>
+              </div>
               <div id="kpi-average-review" class="dash-kpi-value">—</div>
-              <div id="kpi-average-review-note" class="text-xs text-slate-400 mt-1">&nbsp;</div>
+              <div id="kpi-average-prep" class="text-xs text-slate-400 mt-1">&nbsp;</div>
             </div>
           </div>
 
@@ -1347,9 +1362,29 @@
               <div class="dash-kpi-label">Сумма в реестрах</div>
               <div id="kpi-bankruptcy-total" class="dash-kpi-value dash-kpi-accent">0 ₽</div>
             </div>
+            <div class="dash-card dash-kpi">
+              <div class="dash-kpi-label flex items-center gap-1">
+                % от судебных дел
+                <span class="dash-info" tabindex="0">
+                  i
+                  <span class="dash-info-bubble">
+                    Какая доля судебных дел дошла до банкротства должника за
+                    выбранный период. В должниках — число банкротов ÷ число
+                    судебных должников × 100 %. В сумме требований — сумма долга
+                    банкротов ÷ сумма судебных требований × 100 %.
+                    Банкротные дела на стадии «Процесс» (заседание назначено,
+                    процедура ещё не введена) в расчёт не входят.
+                    Судебные дела берутся за тот же период; год банкротного дела
+                    определяется по номеру дела.
+                  </span>
+                </span>
+              </div>
+              <div id="kpi-bankruptcy-conversion-debtors" class="dash-kpi-value">—</div>
+              <div id="kpi-bankruptcy-conversion-amount" class="text-xs text-slate-400 mt-1">&nbsp;</div>
+            </div>
           </div>
 
-          <div class="dash-card">
+          <div id="bankruptcy-dynamics-card" class="dash-card">
             <div class="dash-card-title">Динамика банкротств по годам</div>
             <div class="dash-chart-box"><canvas id="chart-bankruptcy-dynamics"></canvas></div>
           </div>

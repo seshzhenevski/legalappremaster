@@ -130,6 +130,13 @@ BANKRUPTCY_STAGE_KEYWORDS = [
 ]
 BANKRUPTCY_STAGE_OTHER = "Иное"
 
+# «СЗ 23.07.2026» — назначено судебное заседание: процедура ещё не введена, дело
+# на рассмотрении. Отдельный маркер, а не ключевое слово из списка выше: «сз» —
+# это токен целиком (после нормализации даты отпадают), подстрокой его ловить
+# нельзя, иначе он совпал бы внутри других слов.
+BANKRUPTCY_STAGE_HEARING_MARKER = "сз"
+BANKRUPTCY_STAGE_HEARING = "Процесс"
+
 # Организационно-правовые формы: при сопоставлении должника претензии с судебным
 # делом форма отбрасывается, сравнивается только суть наименования. «ООО ГИТИ»,
 # «ГИТИ ООО», «ГИТИ», «ООО "ГИТИ"» — один и тот же должник.
@@ -207,7 +214,20 @@ def build_dashboard_data(case_rows: list, bankruptcy_rows: list,
             "by_year": {year: _cases_section(_filter_by_year(cases, year)) for year in years},
             "dynamics": [_year_dynamics(year, _filter_by_year(cases, year)) for year in years],
         },
-        "bankruptcy": _bankruptcy_section(bankruptcies),
+        "bankruptcy": {
+            "years": years,
+            "overall": _bankruptcy_section(bankruptcies, cases),
+            "by_year": {
+                year: _bankruptcy_section(
+                    _filter_bankruptcies_by_year(bankruptcies, year),
+                    _filter_by_year(cases, year),
+                )
+                for year in years
+            },
+            # Динамика по годам — кросс-годовой график, он есть только в общем
+            # обзоре и на экране года не показывается.
+            "dynamics": _bankruptcy_dynamics(bankruptcies),
+        },
         "claims": _claims_block(claim_rows, claim_error, cases),
         "warnings": _finalize_warnings(warnings),
     }
@@ -295,6 +315,7 @@ def _build_case(row: list, row_number: int, columns: dict, year: str | None, war
         "in_work_date": in_work_date,
         "court_date": court_date,
         "review_days": _review_days(in_work_date, decision_date),
+        "prep_days": _prep_days(in_work_date, court_date),
         "principal": principal,
         "penalty": penalty,
         "court_costs": court_costs,
@@ -382,6 +403,21 @@ def _review_days(in_work_date, decision_date) -> int | None:
     return days if days >= 0 else None
 
 
+def _prep_days(in_work_date, court_date) -> int | None:
+    """
+    Считает срок подготовки иска: от «В работе» (столбец D) до «Передано в суд»
+    (столбец E).
+
+    Возвращает None, если хотя бы одной даты нет или они стоят в обратном
+    порядке. Дело без обеих дат в среднее не входит и его не искажает — так же,
+    как в сроке рассмотрения.
+    """
+    if in_work_date is None or court_date is None:
+        return None
+    days = (court_date - in_work_date).days
+    return days if days >= 0 else None
+
+
 def _repayment_kind(normalized_status: str) -> str:
     """
     Различает, как вернули долг: до суда или по исполнительному листу.
@@ -446,8 +482,9 @@ def _bankruptcy_stage(raw_stage: str) -> str:
     В реестре пишут «Конкурсное производство до 25.05.2026», «СЗ 23.07.2026»,
     иногда в несколько строк. Для графика важна процедура, а не дата заседания:
     без этой свёртки у 31 дела получилось бы 30 категорий и график ни о чём.
-    Всё, что не опознано (например, только дата судебного заседания), попадает
-    в «Иное»; полный текст остаётся видимым в таблице должников.
+    «СЗ …» — назначенное судебное заседание, процедура ещё не введена: это
+    «Процесс». Всё прочее неопознанное попадает в «Иное»; полный текст
+    остаётся видимым в таблице должников.
     """
     if not raw_stage:
         return NOT_SPECIFIED
@@ -456,6 +493,8 @@ def _bankruptcy_stage(raw_stage: str) -> str:
     for keyword, stage_name in BANKRUPTCY_STAGE_KEYWORDS:
         if keyword in normalized:
             return stage_name
+    if BANKRUPTCY_STAGE_HEARING_MARKER in normalized.split():
+        return BANKRUPTCY_STAGE_HEARING
     return BANKRUPTCY_STAGE_OTHER
 
 
@@ -471,11 +510,15 @@ def _cases_section(cases: list[dict]) -> dict:
     """
     claimed_total = sum((case["claimed"] for case in cases), Decimal(0))
     recovered_total = sum((case["recovered"] for case in cases), Decimal(0))
+    principal_total = sum((case["principal"] for case in cases), Decimal(0))
 
     # Срок рассмотрения считается только по делам, где есть обе даты: начало
     # работы и решение. Дела без них не занижают и не завышают среднее — они в
     # расчёт не входят, поэтому рядом со средним отдаётся и размер выборки.
     review_terms = [case["review_days"] for case in cases if case["review_days"] is not None]
+    # Срок подготовки иска — от «В работе» до «Передано в суд». Своя выборка:
+    # даты нужны другие, поэтому набор дел не совпадает со сроком рассмотрения.
+    prep_terms = [case["prep_days"] for case in cases if case["prep_days"] is not None]
 
     return {
         "kpi": {
@@ -487,10 +530,20 @@ def _cases_section(cases: list[dict]) -> dict:
             "recovery_percent": (
                 _money(recovered_total / claimed_total * 100) if claimed_total > 0 else None
             ),
+            # Тот же возврат, но к «телу» долга (ПДЗ), без неустойки и судебных
+            # расходов. Процент к требованиям занижен ровно на них: неустойку
+            # часто скидывают при мировом, и по нему не видно, вернулся ли долг.
+            "recovery_percent_principal": (
+                _money(recovered_total / principal_total * 100) if principal_total > 0 else None
+            ),
             "average_review_days": (
                 round(sum(review_terms) / len(review_terms)) if review_terms else None
             ),
             "review_cases_count": len(review_terms),
+            "average_prep_days": (
+                round(sum(prep_terms) / len(prep_terms)) if prep_terms else None
+            ),
+            "prep_cases_count": len(prep_terms),
         },
         "funnel": _funnel(cases),
         "claim_structure": {
@@ -517,12 +570,18 @@ def _cases_section(cases: list[dict]) -> dict:
 
 def _funnel(cases: list[dict]) -> list[dict]:
     """
-    Строит воронку: количество дел и сумма требований на каждой стадии.
+    Строит воронку: количество дел, требования и взысканное на каждой стадии.
 
     Стадии идут в порядке процесса, чтобы был виден «затор». Категории
     «Статус не указан» и «Статус не распознан» добавляются в конец и только
     если такие дела есть. У стадии «долг погашен» дополнительно возвращается
     разбивка по способу возврата — интерфейс показывает её в подсказке.
+
+    Взысканное отдаётся по каждой стадии, а не только по погашенным делам:
+    деньги приходят и в исполнительном производстве, и в банкротстве. Поэтому
+    сумма «recovered» по всем стадиям сходится с показателем «фактически
+    взыскано» — на графике требований видно, какая часть каждой стадии уже
+    вернулась.
     """
     stages = list(STAGE_ORDER)
     for extra in (STATUS_NOT_SET, STATUS_UNRECOGNIZED):
@@ -536,6 +595,7 @@ def _funnel(cases: list[dict]) -> list[dict]:
             "stage": stage,
             "count": len(on_stage),
             "claimed": _money(sum((case["claimed"] for case in on_stage), Decimal(0))),
+            "recovered": _money(sum((case["recovered"] for case in on_stage), Decimal(0))),
         }
         if stage == STAGE_REPAID:
             entry["breakdown"] = _grouped_counts(
@@ -546,9 +606,14 @@ def _funnel(cases: list[dict]) -> list[dict]:
     return funnel
 
 
-def _bankruptcy_section(cases: list[dict]) -> dict:
+def _bankruptcy_section(cases: list[dict], court_cases: list[dict]) -> dict:
     """
-    Считает блоки секции «Банкротство»: показатели, воронку и топ должников.
+    Считает показатели секции «Банкротство» по одному набору дел.
+
+    Одна функция обслуживает общий обзор и экран года — отличается только
+    переданный набор банкротных дел (и парный ему набор судебных дел, к которым
+    считается конверсия). Динамика по годам сюда не входит: она кросс-годовая и
+    считается на уровне выше, только для общего обзора.
 
     Стадии не упорядочены по процессу (закрытого списка нет) — они идут по
     убыванию количества дел.
@@ -558,8 +623,8 @@ def _bankruptcy_section(cases: list[dict]) -> dict:
             "cases_count": len(cases),
             "claimed_total": _money(sum((case["claimed"] for case in cases), Decimal(0))),
         },
+        "conversion": _conversion(court_cases, cases),
         "stages": _grouped_counts(case["stage"] for case in cases),
-        "dynamics": _bankruptcy_dynamics(cases),
         # Каждый суд дела считается отдельно (дело с двумя судами попадает в оба).
         # Пустые уже отсеяны при разборе, отдельной категории «Не указан» нет.
         "courts": _grouped_counts(court for case in cases for court in case["courts"]),
@@ -576,6 +641,57 @@ def _bankruptcy_section(cases: list[dict]) -> dict:
             for case in sorted(cases, key=lambda case: case["claimed"], reverse=True)[:TOP_DEBTORS_LIMIT]
         ],
     }
+
+
+def _conversion(court_cases: list[dict], bankruptcy_cases: list[dict]) -> dict:
+    """
+    Считает конверсию судебных дел в банкротство за один период.
+
+    Знаменатель — судебные дела периода, числитель — банкроты того же периода:
+    сколько должников и какая доля их долга дошли до банкротства. Дела на стадии
+    «Процесс» (заседание назначено, процедура ещё не введена) банкротами не
+    считаются и в числитель не входят — иначе конверсия была бы завышена.
+
+    Проценты не существуют, когда судебных дел (или их суммы) нет: интерфейс
+    покажет прочерк вместо деления на ноль. Сырые количества и суммы отдаются
+    для подсказки.
+    """
+    recognized = [
+        case for case in bankruptcy_cases if case["stage"] != BANKRUPTCY_STAGE_HEARING
+    ]
+    court_count = len(court_cases)
+    court_claimed = sum((case["claimed"] for case in court_cases), Decimal(0))
+    bankrupt_count = len(recognized)
+    bankrupt_claimed = sum((case["claimed"] for case in recognized), Decimal(0))
+
+    return {
+        "debtors_percent": (
+            _money(bankrupt_count / court_count * 100) if court_count > 0 else None
+        ),
+        "amount_percent": (
+            _money(bankrupt_claimed / court_claimed * 100) if court_claimed > 0 else None
+        ),
+        "bankrupt_count": bankrupt_count,
+        "court_count": court_count,
+        "bankrupt_claimed": _money(bankrupt_claimed),
+        "court_claimed": _money(court_claimed),
+    }
+
+
+def _filter_bankruptcies_by_year(cases: list[dict], year: str) -> list[dict]:
+    """
+    Отбирает банкротные дела одного года.
+
+    Год берётся из номера дела (как в динамике банкротств): дело с номерами
+    разных лет попадает в каждый из них. Дела без распознанного года относятся
+    к «Без года».
+    """
+    matched = []
+    for case in cases:
+        case_years = _years_from_case_number(case["case_number"]) or {UNKNOWN_YEAR_LABEL}
+        if year in case_years:
+            matched.append(case)
+    return matched
 
 
 def _bankruptcy_dynamics(cases: list[dict]) -> list[dict]:

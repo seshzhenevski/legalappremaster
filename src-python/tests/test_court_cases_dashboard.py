@@ -56,6 +56,14 @@ def funnel_of(data) -> dict:
     return {stage["stage"]: stage["count"] for stage in data["cases"]["overall"]["funnel"]}
 
 
+def stage_of(data, stage_name: str) -> dict:
+    """Одна стадия воронки общего обзора целиком — с суммами и разбивкой."""
+    return next(
+        stage for stage in data["cases"]["overall"]["funnel"]
+        if stage["stage"] == stage_name
+    )
+
+
 class YearSeparatorTests(unittest.TestCase):
     """Строки-разделители «2026 год» в колонке «Истец» задают год делам под собой."""
 
@@ -271,6 +279,25 @@ class MetricsTests(unittest.TestCase):
         ], [])
         self.assertIsNone(data["cases"]["overall"]["kpi"]["recovery_percent"])
 
+    def test_recovery_percent_to_principal(self):
+        # Требования 1000 (ПДЗ 800 + неустойка 200), взыскано 400: 40% к
+        # требованиям, 50% к основному долгу — второй знаменатель уже.
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(debtor="А", principal=800, penalty=200, total=1000, recovered=400),
+        ], [])
+        kpi = data["cases"]["overall"]["kpi"]
+        self.assertEqual(kpi["recovery_percent"], 40.0)
+        self.assertEqual(kpi["recovery_percent_principal"], 50.0)
+
+    def test_recovery_percent_to_principal_is_none_without_principal(self):
+        # Основного долга нет (только неустойка) — процент к нему не существует.
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(debtor="А", penalty=500, total=500, recovered=100),
+        ], [])
+        self.assertIsNone(data["cases"]["overall"]["kpi"]["recovery_percent_principal"])
+
     def test_top_debtors_sorted_by_claimed_amount(self):
         data = build_dashboard_data([
             CASE_HEADER,
@@ -323,6 +350,63 @@ class MetricsTests(unittest.TestCase):
         )
 
 
+class FunnelAmountsTests(unittest.TestCase):
+    """Требования и взысканное по стадиям — из них собран составной столбец."""
+
+    def test_stage_keeps_claimed_and_recovered_apart(self):
+        # Погашенное дело: требовали 1000, вернулось 700. В столбце стадии обе
+        # величины живут отдельно — заявленное не подменяется взысканным.
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(debtor="А", status="Долг погашен / по ИЛ", total=1000, recovered=700),
+        ], [])
+        repaid = stage_of(data, "долг погашен")
+        self.assertEqual(repaid["claimed"], 1000)
+        self.assertEqual(repaid["recovered"], 700)
+
+    def test_recovered_is_counted_on_every_stage(self):
+        # Деньги приходят не только по погашенным делам: у приставов и в
+        # банкротстве тоже. Стадия показывает своё взысканное.
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(debtor="А", status="Исполнительное пр-во", total=1000, recovered=300),
+            case_row(debtor="Б", status="Банкротство", total=1000, recovered=100),
+        ], [])
+        self.assertEqual(stage_of(data, "исполнительное пр-во")["recovered"], 300)
+        self.assertEqual(stage_of(data, "банкротство")["recovered"], 100)
+
+    def test_recovered_over_stages_matches_recovered_total(self):
+        # Ради этого взысканное и считается по всем стадиям: сумма зелёных
+        # частей графика обязана сходиться с показателем «фактически взыскано».
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(debtor="А", status="Долг погашен / по ИЛ", total=1000, recovered=700),
+            case_row(debtor="Б", status="Исполнительное пр-во", total=1000, recovered=300),
+            case_row(debtor="В", status="Процесс", total=1000),
+        ], [])
+        section = data["cases"]["overall"]
+        by_stage = sum(stage["recovered"] for stage in section["funnel"])
+        self.assertEqual(by_stage, section["kpi"]["recovered_total"])
+
+    def test_stage_without_recovery_reports_zero(self):
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(debtor="А", status="Процесс", total=1000),
+        ], [])
+        self.assertEqual(stage_of(data, "процесс")["recovered"], 0)
+
+    def test_recovered_may_exceed_claimed_when_amount_is_missing(self):
+        # Реестр ведут руками: «Взыскано» заполнено, «Сумма» пуста. Величины
+        # отдаются как есть — интерфейс покажет аномалию, а не спрячет её.
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(debtor="А", status="Долг погашен / по ИЛ", recovered=500),
+        ], [])
+        repaid = stage_of(data, "долг погашен")
+        self.assertEqual(repaid["claimed"], 0)
+        self.assertEqual(repaid["recovered"], 500)
+
+
 class ReviewTermTests(unittest.TestCase):
     """Средний срок рассмотрения: от «В работе» до даты решения."""
 
@@ -362,6 +446,53 @@ class ReviewTermTests(unittest.TestCase):
         self.assertIsNone(data["cases"]["overall"]["kpi"]["average_review_days"])
 
 
+class PrepTermTests(unittest.TestCase):
+    """Срок подготовки иска: от «В работе» (D) до «Передано в суд» (E)."""
+
+    def test_average_counts_only_cases_with_both_dates(self):
+        data = build_dashboard_data([
+            CASE_HEADER,
+            # 10 и 30 дней — идут в среднее (итого 20).
+            case_row(debtor="А", in_work="01.02.2026", court_date="11.02.2026"),
+            case_row(debtor="Б", in_work="01.02.2026", court_date="03.03.2026"),
+            # Нет даты передачи в суд — дело в среднее не входит.
+            case_row(debtor="В", in_work="01.02.2026"),
+            # Нет даты начала работы — тоже не входит.
+            case_row(debtor="Г", court_date="03.03.2026"),
+        ], [])
+        kpi = data["cases"]["overall"]["kpi"]
+        self.assertEqual(kpi["average_prep_days"], 20)
+        self.assertEqual(kpi["prep_cases_count"], 2)
+
+    def test_no_average_without_suitable_cases(self):
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(debtor="А", total=100),
+        ], [])
+        kpi = data["cases"]["overall"]["kpi"]
+        self.assertIsNone(kpi["average_prep_days"])
+        self.assertEqual(kpi["prep_cases_count"], 0)
+
+    def test_court_date_before_start_of_work_is_ignored(self):
+        # Передача в суд раньше начала работы — опечатка, в среднее не идёт.
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(debtor="А", in_work="01.03.2026", court_date="11.02.2026"),
+        ], [])
+        self.assertIsNone(data["cases"]["overall"]["kpi"]["average_prep_days"])
+
+    def test_prep_term_reacts_to_year_filter(self):
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(section="2025 год"),
+            case_row(debtor="А", in_work="01.02.2025", court_date="11.02.2025"),  # 10 дней
+            case_row(section="2024 год"),
+            case_row(debtor="Б", in_work="01.02.2024", court_date="02.03.2024"),  # 30 дней (2024 — високосный)
+        ], [])
+        self.assertEqual(data["cases"]["by_year"]["2025"]["kpi"]["average_prep_days"], 10)
+        self.assertEqual(data["cases"]["by_year"]["2024"]["kpi"]["average_prep_days"], 30)
+
+
 class RobustnessTests(unittest.TestCase):
     """Сводная проверка: в каждой строке чего-то не хватает — дашборд считается."""
 
@@ -385,7 +516,7 @@ class RobustnessTests(unittest.TestCase):
         self.assertEqual(data["cases"]["years"], [])
         self.assertEqual(data["cases"]["overall"]["kpi"]["cases_count"], 0)
         self.assertIsNone(data["cases"]["overall"]["kpi"]["recovery_percent"])
-        self.assertEqual(data["bankruptcy"]["kpi"]["cases_count"], 0)
+        self.assertEqual(data["bankruptcy"]["overall"]["kpi"]["cases_count"], 0)
 
     def test_short_rows_without_trailing_cells_are_handled(self):
         # Sheets API обрезает хвостовые пустые ячейки — строка приходит короче заголовка.
@@ -408,7 +539,7 @@ class BankruptcyTests(unittest.TestCase):
             ["АО Тривио", "ГЕМОНТ", "А65-19059/2022", "АС Республики Татарстан",
              "Наблюдение до 08.05.2026", "2 000,50", ""],
         ])
-        section = data["bankruptcy"]
+        section = data["bankruptcy"]["overall"]
         self.assertEqual(section["kpi"]["cases_count"], 2)
         self.assertEqual(section["kpi"]["claimed_total"], 3000.5)
         self.assertEqual(section["top_debtors"][0]["debtor"], "ГЕМОНТ")
@@ -422,20 +553,44 @@ class BankruptcyTests(unittest.TestCase):
             ["", "Б", "", "", "09.02.2026 - конкурсное производство до 09.08.2026", 10, ""],
             ["", "В", "", "", "Наблюдение до 18.03.2026 (СЗ отложено до 10.06.2026)", 10, ""],
             ["", "Г", "", "", "Реализация имущества до 21.07.2026", 10, ""],
-            ["", "Д", "", "", "СЗ 23.07.2026", 10, ""],
+            ["", "Д", "", "", "что-то неведомое", 10, ""],
         ])
-        stages = {stage["name"]: stage["count"] for stage in data["bankruptcy"]["stages"]}
+        stages = {stage["name"]: stage["count"] for stage in data["bankruptcy"]["overall"]["stages"]}
         self.assertEqual(stages["Конкурсное производство"], 2)
         self.assertEqual(stages["Наблюдение"], 1)
         self.assertEqual(stages["Реализация имущества"], 1)
         self.assertEqual(stages["Иное"], 1)
+
+    def test_scheduled_hearing_stage_is_litigation(self):
+        # «СЗ 23.07.2026» — назначено судебное заседание, процедура ещё не
+        # введена: это «Процесс», а не «Иное».
+        data = build_dashboard_data([], [
+            BANKRUPTCY_HEADER,
+            ["", "А", "", "", "СЗ 23.07.2026", 10, ""],
+            ["", "Б", "", "", "СЗ", 10, ""],
+        ])
+        stages = {stage["name"]: stage["count"] for stage in data["bankruptcy"]["overall"]["stages"]}
+        self.assertEqual(stages["Процесс"], 2)
+        self.assertNotIn("Иное", stages)
+
+    def test_hearing_marker_does_not_match_inside_words(self):
+        # «сз» ловится как отдельный токен, а не подстрокой: «Возврат СЗ-заявления»
+        # не должен ошибочно стать «Процессом» из-за keyword-провала — здесь
+        # проверяем, что случайное слово с «сз» внутри уходит в «Иное».
+        data = build_dashboard_data([], [
+            BANKRUPTCY_HEADER,
+            ["", "А", "", "", "рассзюжет", 10, ""],
+        ])
+        stages = {stage["name"]: stage["count"] for stage in data["bankruptcy"]["overall"]["stages"]}
+        self.assertEqual(stages.get("Иное"), 1)
+        self.assertNotIn("Процесс", stages)
 
     def test_bankruptcy_row_without_stage_gets_placeholder(self):
         data = build_dashboard_data([], [
             BANKRUPTCY_HEADER,
             ["", "ООО Должник", "", "", "", "", ""],
         ])
-        self.assertEqual(data["bankruptcy"]["stages"][0]["name"], "Не указан")
+        self.assertEqual(data["bankruptcy"]["overall"]["stages"][0]["name"], "Не указан")
 
     def test_bankruptcy_dynamics_takes_year_from_case_number(self):
         data = build_dashboard_data([], [
@@ -477,7 +632,7 @@ class BankruptcyTests(unittest.TestCase):
             ["", "В", "А07-3/2025", "АС Республики Башкортостан", "Наблюдение", 100, ""],
             ["", "Г", "А07-4/2025", "", "Наблюдение", 100, ""],
         ])
-        courts = data["bankruptcy"]["courts"]
+        courts = data["bankruptcy"]["overall"]["courts"]
         self.assertEqual(courts[0], {"name": "АС города Москвы", "count": 2})
         # Дело без суда в распределение не попадает.
         self.assertNotIn("", [c["name"] for c in courts])
@@ -489,13 +644,13 @@ class BankruptcyTests(unittest.TestCase):
              "Наблюдение", 1000, ""],
             ["", "Прочий", "А40-2/2025", "АС города Москвы", "Наблюдение", 500, ""],
         ])
-        courts = {c["name"]: c["count"] for c in data["bankruptcy"]["courts"]}
+        courts = {c["name"]: c["count"] for c in data["bankruptcy"]["overall"]["courts"]}
         # Составной суд разложен: Москва учтена дважды, Ханты — один раз.
         self.assertEqual(courts["АС города Москвы"], 2)
         self.assertEqual(courts["АС Ханты-Мансийского АО"], 1)
         # В таблице топа тот же должник показан со складкой через « / ».
         self.assertEqual(
-            data["bankruptcy"]["top_debtors"][0]["court"],
+            data["bankruptcy"]["overall"]["top_debtors"][0]["court"],
             "АС города Москвы / АС Ханты-Мансийского АО",
         )
 
@@ -505,7 +660,96 @@ class BankruptcyTests(unittest.TestCase):
             ["", "А", "А56-1/2025", "АС города Санкт-Петербурга и Ленинградской области",
              "Наблюдение", 100, ""],
         ])
-        self.assertEqual(data["bankruptcy"]["courts"][0]["name"], "АС города Санкт-Петербурга")
+        self.assertEqual(data["bankruptcy"]["overall"]["courts"][0]["name"], "АС города Санкт-Петербурга")
+
+
+class ConversionTests(unittest.TestCase):
+    """Конверсия судебных дел в банкротство: плитка «% от судебных дел»."""
+
+    def test_conversion_percentages_over_court_cases(self):
+        # 4 судебных дела на 1000 ₽ каждое (сумма 4000). Из них двое дошли до
+        # банкротства с долгом 1000 + 500 = 1500. В должниках 2/4 = 50 %, в сумме
+        # 1500/4000 = 37,5 %. Знаменатель — судебные дела, не банкротные.
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(debtor="А", total=1000),
+            case_row(debtor="Б", total=1000),
+            case_row(debtor="В", total=1000),
+            case_row(debtor="Г", total=1000),
+        ], [
+            BANKRUPTCY_HEADER,
+            ["", "А", "А40-1/2025", "", "Наблюдение", 1000, ""],
+            ["", "Б", "А40-2/2025", "", "Конкурсное производство", 500, ""],
+        ])
+        conversion = data["bankruptcy"]["overall"]["conversion"]
+        self.assertEqual(conversion["debtors_percent"], 50.0)
+        self.assertEqual(conversion["amount_percent"], 37.5)
+
+    def test_process_stage_excluded_from_conversion(self):
+        # «СЗ …» — банкротство ещё не введено: такой должник и его сумма в
+        # числитель не входят. Из двух банкротных дел засчитывается одно.
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(debtor="А", total=1000),
+            case_row(debtor="Б", total=1000),
+        ], [
+            BANKRUPTCY_HEADER,
+            ["", "А", "А40-1/2025", "", "Наблюдение", 1000, ""],
+            ["", "Б", "А40-2/2025", "", "СЗ 23.07.2026", 1000, ""],
+        ])
+        conversion = data["bankruptcy"]["overall"]["conversion"]
+        self.assertEqual(conversion["debtors_percent"], 50.0)
+        self.assertEqual(conversion["amount_percent"], 50.0)
+        self.assertEqual(conversion["bankrupt_count"], 1)
+
+    def test_conversion_is_none_without_court_cases(self):
+        # Судебных дел нет — конверсии не существует, а не ноль или деление на ноль.
+        data = build_dashboard_data([], [
+            BANKRUPTCY_HEADER,
+            ["", "А", "А40-1/2025", "", "Наблюдение", 1000, ""],
+        ])
+        conversion = data["bankruptcy"]["overall"]["conversion"]
+        self.assertIsNone(conversion["debtors_percent"])
+        self.assertIsNone(conversion["amount_percent"])
+
+    def test_conversion_reacts_to_year_filter(self):
+        # Судебный год — из разделителя, банкротный — из номера дела. За 2025:
+        # одно судебное дело и один банкрот того же года → 100 %.
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(section="2025 год"),
+            case_row(debtor="А", total=1000),
+            case_row(section="2024 год"),
+            case_row(debtor="Б", total=1000),
+            case_row(debtor="В", total=1000),
+        ], [
+            BANKRUPTCY_HEADER,
+            ["", "А", "А40-1/2025", "", "Наблюдение", 1000, ""],
+        ])
+        by_year = data["bankruptcy"]["by_year"]
+        self.assertEqual(by_year["2025"]["conversion"]["debtors_percent"], 100.0)
+        self.assertEqual(by_year["2024"]["conversion"]["debtors_percent"], 0.0)
+
+    def test_bankruptcy_section_filters_by_year(self):
+        # Весь блок банкротства реагирует на год: показатели, стадии и суммы
+        # берутся по банкротным делам этого года (год — из номера дела).
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(section="2025 год"),
+            case_row(debtor="Судебный", total=1000),
+        ], [
+            BANKRUPTCY_HEADER,
+            ["", "А", "А40-1/2025", "", "Наблюдение", 1000, ""],
+            ["", "Б", "А40-2/2025", "", "Конкурсное производство", 500, ""],
+            ["", "В", "А40-3/2024", "", "Наблюдение", 700, ""],
+        ])
+        section_2025 = data["bankruptcy"]["by_year"]["2025"]
+        self.assertEqual(section_2025["kpi"]["cases_count"], 2)
+        self.assertEqual(section_2025["kpi"]["claimed_total"], 1500.0)
+        stages_2025 = {stage["name"] for stage in section_2025["stages"]}
+        self.assertEqual(stages_2025, {"Наблюдение", "Конкурсное производство"})
+        # Общий обзор по-прежнему видит все дела всех лет.
+        self.assertEqual(data["bankruptcy"]["overall"]["kpi"]["cases_count"], 3)
 
 
 CLAIM_HEADER = [

@@ -38,6 +38,11 @@ const STAGE_COLORS = {
 const DEFAULT_COLOR = "#2563eb";
 const STRUCTURE_COLORS = ["#2563eb", "#f59e0b", "#94a3b8"];
 
+// Прозрачность светлого тона стадии (~30%): им закрашен невзысканный остаток в
+// столбце сумм. Тон берётся от цвета самой стадии, а не задаётся отдельной
+// палитрой, — иначе цвета пришлось бы держать в паре и синхронизировать руками.
+const LIGHT_TONE_ALPHA = "4d";
+
 const CHART_ANIMATION_MS = 400;
 
 // Сколько строк топа видно до нажатия «Показать все».
@@ -182,8 +187,11 @@ function emptySection() {
       claimed_total: 0,
       recovered_total: 0,
       recovery_percent: null,
+      recovery_percent_principal: null,
       average_review_days: null,
       review_cases_count: 0,
+      average_prep_days: null,
+      prep_cases_count: 0,
     },
     funnel: [],
     claim_structure: { principal: 0, penalty: 0, court_costs: 0 },
@@ -227,7 +235,12 @@ function render() {
     renderYearCards(dashboardData.cases.dynamics);
   }
 
-  renderBankruptcy(dashboardData.bankruptcy);
+  renderBankruptcy(currentBankruptcySection());
+  document.getElementById("bankruptcy-dynamics-card").classList.toggle("hidden", !isOverview);
+  if (isOverview) {
+    renderBankruptcyDynamics(dashboardData.bankruptcy.dynamics);
+  }
+
   renderClaims(dashboardData.claims, isOverview);
   renderWarnings(dashboardData.warnings);
 
@@ -258,32 +271,50 @@ function renderKpi(kpi) {
     );
   }
 
+  // Вторая строка — процент к основному долгу. Основного долга нет (все
+  // требования — только неустойка/расходы) — строку прячем, а не пишем прочерк.
+  const principalElement = document.getElementById("kpi-recovery-percent-principal");
+  if (kpi.recovery_percent_principal === null) {
+    principalElement.innerHTML = "&nbsp;";
+  } else {
+    // Значение — из числа, поэтому в innerHTML попадают только цифры (без риска
+    // разметки). Процент — чёрным (как основной показатель), текст — серым.
+    const principalPercent = kpi.recovery_percent_principal.toFixed(1).replace(".", ",");
+    principalElement.innerHTML = `<span class="text-slate-900">${principalPercent} %</span> к основному долгу`;
+  }
+
   renderAverageReviewTerm(kpi);
 }
 
 /**
- * Показывает средний срок рассмотрения дела: от «В работе» до даты решения.
+ * Показывает два срока: общий (от «В работе» до решения) и срок подготовки иска
+ * (от «В работе» до передачи в суд).
  *
- * Считается только по делам, где обе даты есть, поэтому под числом честно
- * подписано, по какой выборке оно получено. Если таких дел нет — прочерк.
+ * Общий срок — крупным числом, срок подготовки — мелкой строкой под ним, как в
+ * плитке «Процент взыскания». Каждый показатель считается по своей выборке дел
+ * с нужными датами; если считать не из чего — прочерк / пустая строка.
  */
 function renderAverageReviewTerm(kpi) {
-  const note = document.getElementById("kpi-average-review-note");
-
   // Сравнение через == null ловит и null (срок посчитать не из чего), и
   // undefined (бэкенд старой версии, который поля ещё не отдаёт): вкладка
   // покажет прочерк, а не упадёт.
   if (kpi.average_review_days == null) {
     document.getElementById("kpi-average-review").textContent = "—";
-    note.textContent = "нет дел с датами решения";
-    return;
+  } else {
+    animateNumber("kpi-average-review", kpi.average_review_days, (value) =>
+      pluralize(Math.round(value), "день", "дня", "дней"),
+    );
   }
 
-  animateNumber("kpi-average-review", kpi.average_review_days, (value) =>
-    pluralize(Math.round(value), "день", "дня", "дней"),
-  );
-  note.textContent =
-    `по ${pluralize(kpi.review_cases_count || 0, "делу", "делам", "делам")} с датой решения`;
+  const prepElement = document.getElementById("kpi-average-prep");
+  if (kpi.average_prep_days == null) {
+    prepElement.innerHTML = "&nbsp;";
+  } else {
+    // pluralize возвращает «20 дней» — только цифры и текст, в innerHTML
+    // безопасно. Число — чёрным (как основной показатель), подпись — серым.
+    const prep = pluralize(Math.round(kpi.average_prep_days), "день", "дня", "дней");
+    prepElement.innerHTML = `<span class="text-slate-900">${prep}</span> — срок подготовки иска`;
+  }
 }
 
 /**
@@ -327,31 +358,85 @@ function renderFunnel(funnel) {
 
 /**
  * Рисует суммы требований по стадиям — сколько денег «стоит» каждая стадия.
+ *
+ * Столбец стадии составной: насыщенным цветом снизу — уже взысканное, светлым
+ * сверху — остаток до заявленного. Так на одном столбце видно и сколько
+ * требовали, и сколько из этого вернулось. Высота столбца — заявленная сумма.
  */
 function renderStageAmounts(funnel) {
-  const hasMoney = funnel.some((stage) => stage.claimed > 0);
+  const hasMoney = funnel.some((stage) => stage.claimed > 0 || stage.recovered > 0);
+  const options = baseChartOptions();
+  options.plugins.tooltip.callbacks = { label: stageAmountTooltipLabel(funnel) };
+
   renderChart("chart-stage-amounts", hasMoney, {
     type: "bar",
     data: {
       labels: funnel.map((stage) => capitalize(stage.stage)),
-      datasets: [{
-        label: "Сумма требований",
-        data: funnel.map((stage) => stage.claimed),
-        backgroundColor: funnel.map((stage) => STAGE_COLORS[stage.stage] || DEFAULT_COLOR),
-        borderRadius: 6,
-      }],
+      datasets: [
+        {
+          label: "Фактически взыскано",
+          data: funnel.map((stage) => stage.recovered),
+          backgroundColor: funnel.map((stage) => stageColor(stage)),
+        },
+        {
+          label: "Заявлено",
+          data: funnel.map((stage) => outstandingAmount(stage)),
+          backgroundColor: funnel.map((stage) => `${stageColor(stage)}${LIGHT_TONE_ALPHA}`),
+          borderRadius: 6,
+        },
+      ],
     },
     options: {
-      ...baseChartOptions({ moneyTooltip: true }),
+      ...options,
+      // Подсказка отвечает за сегмент под курсором, а не за весь столбец: у
+      // составного столбца две части, и у каждой своя сумма.
+      interaction: { mode: "nearest", intersect: true },
       // Запас справа под последнюю скошенную подпись оси («Статус не указан») —
       // без него она вылезала за область графика и обрезалась при печати.
       layout: { padding: { right: 16 } },
       scales: {
-        x: { grid: { display: false }, ticks: { autoSkip: false, maxRotation: 40, minRotation: 0 } },
-        y: { beginAtZero: true, ticks: { callback: formatAxisMoney } },
+        x: {
+          stacked: true,
+          grid: { display: false },
+          ticks: { autoSkip: false, maxRotation: 40, minRotation: 0 },
+        },
+        y: { stacked: true, beginAtZero: true, ticks: { callback: formatAxisMoney } },
       },
     },
   });
+}
+
+/**
+ * Цвет стадии — насыщенный тон для взысканной части столбца.
+ */
+function stageColor(stage) {
+  return STAGE_COLORS[stage.stage] || DEFAULT_COLOR;
+}
+
+/**
+ * Считает невзысканный остаток стадии — светлую часть столбца.
+ *
+ * Взысканное может превысить заявленное: в реестре встречается заполненное
+ * «Взыскано» при пустой «Сумме». Остаток тогда нулевой, и столбец вырастает до
+ * взысканного — аномалия видна, а не спрятана за отрицательной высотой.
+ */
+function outstandingAmount(stage) {
+  return Math.max(stage.claimed - stage.recovered, 0);
+}
+
+/**
+ * Собирает подсказку для составного столбца стадии.
+ *
+ * Величины берутся из воронки, а не из высоты сегмента: у светлой части высота
+ * — это остаток до заявленного, а показать нужно всю заявленную сумму.
+ */
+function stageAmountTooltipLabel(funnel) {
+  return (context) => {
+    const stage = funnel[context.dataIndex];
+    const isRecovered = context.datasetIndex === 0;
+    const value = isRecovered ? stage.recovered : stage.claimed;
+    return `${context.dataset.label}: ${formatAmountAsRubles(value)} ₽`;
+  };
 }
 
 /**
@@ -560,25 +645,62 @@ function toggleTopRows(body, toggle, totalRows) {
 }
 
 /**
+ * Выбирает секцию «Банкротство» под текущий экран.
+ *
+ * Как и судебная часть, банкротство разбито по годам: в общем обзоре — все
+ * дела, на экране года — дела этого года (год берётся из номера дела). Если у
+ * выбранного года банкротных дел нет — пустая секция с прочерками.
+ */
+function currentBankruptcySection() {
+  const bankruptcy = dashboardData.bankruptcy;
+  if (selectedYear === null) {
+    return bankruptcy.overall;
+  }
+  return bankruptcy.by_year[selectedYear] || emptyBankruptcySection();
+}
+
+/**
+ * Пустая секция «Банкротство» — на случай года без банкротных дел.
+ */
+function emptyBankruptcySection() {
+  return {
+    kpi: { cases_count: 0, claimed_total: 0 },
+    conversion: emptyConversion(),
+    stages: [],
+    courts: [],
+    top_debtors: [],
+  };
+}
+
+/**
+ * Пустые показатели конверсии — прочерк вместо чисел.
+ */
+function emptyConversion() {
+  return { debtors_percent: null, amount_percent: null };
+}
+
+/**
  * Рисует секцию «Банкротство»: показатели, стадии и топ должников.
  *
- * Банкротные дела не разбиты по годам — секция одинакова на обоих экранах.
+ * Секция реагирует на выбранный год — принимает уже отобранный набор (общий
+ * обзор или один год). Динамика по годам сюда не входит: она кросс-годовая и
+ * рисуется отдельно, только в общем обзоре.
  */
-function renderBankruptcy(bankruptcy) {
-  animateNumber("kpi-bankruptcy-count", bankruptcy.kpi.cases_count, (value) =>
+function renderBankruptcy(section) {
+  animateNumber("kpi-bankruptcy-count", section.kpi.cases_count, (value) =>
     Math.round(value).toLocaleString("ru-RU"),
   );
-  animateNumber("kpi-bankruptcy-total", bankruptcy.kpi.claimed_total, formatMoney);
+  animateNumber("kpi-bankruptcy-total", section.kpi.claimed_total, formatMoney);
 
-  renderBankruptcyDynamics(bankruptcy.dynamics);
+  renderBankruptcyConversion(section.conversion);
 
-  renderChart("chart-bankruptcy-stages", bankruptcy.stages.length > 0, {
+  renderChart("chart-bankruptcy-stages", section.stages.length > 0, {
     type: "bar",
     data: {
-      labels: bankruptcy.stages.map((stage) => stage.name),
+      labels: section.stages.map((stage) => stage.name),
       datasets: [{
         label: "Дел",
-        data: bankruptcy.stages.map((stage) => stage.count),
+        data: section.stages.map((stage) => stage.count),
         backgroundColor: "#8b5cf6",
         borderRadius: 6,
       }],
@@ -593,13 +715,13 @@ function renderBankruptcy(bankruptcy) {
     },
   });
 
-  renderChart("chart-bankruptcy-courts", bankruptcy.courts.length > 0, {
+  renderChart("chart-bankruptcy-courts", section.courts.length > 0, {
     type: "bar",
     data: {
-      labels: bankruptcy.courts.map((court) => court.name),
+      labels: section.courts.map((court) => court.name),
       datasets: [{
         label: "Дел",
-        data: bankruptcy.courts.map((court) => court.count),
+        data: section.courts.map((court) => court.count),
         backgroundColor: "#8b5cf6",
         borderRadius: 6,
       }],
@@ -618,7 +740,7 @@ function renderBankruptcy(bankruptcy) {
   renderTopTable(
     "dashboard-bankruptcy-debtors",
     "dashboard-bankruptcy-debtors-toggle",
-    bankruptcy.top_debtors,
+    section.top_debtors,
     (row) => `
       <td>${escapeHtml(row.debtor)}</td>
       <td>${escapeHtml(row.case_number) || "—"}</td>
@@ -627,6 +749,34 @@ function renderBankruptcy(bankruptcy) {
       <td class="dash-num">${formatAmountAsRubles(row.claimed)}</td>`,
     5,
   );
+}
+
+/**
+ * Заполняет плитку «% от судебных дел»: конверсия по должникам и по сумме.
+ *
+ * По должникам — крупным числом, по сумме — мелкой строкой под ним, как в
+ * плитке «Процент взыскания». Нет судебных дел (или их суммы) — прочерк вместо
+ * деления на ноль.
+ */
+function renderBankruptcyConversion(conversion) {
+  const debtorsElement = document.getElementById("kpi-bankruptcy-conversion-debtors");
+  if (conversion.debtors_percent == null) {
+    debtorsElement.textContent = "—";
+  } else {
+    animateNumber("kpi-bankruptcy-conversion-debtors", conversion.debtors_percent, (value) =>
+      `${value.toFixed(1).replace(".", ",")} %`,
+    );
+  }
+
+  const amountElement = document.getElementById("kpi-bankruptcy-conversion-amount");
+  if (conversion.amount_percent == null) {
+    amountElement.innerHTML = "&nbsp;";
+  } else {
+    // Значение — из числа, в innerHTML безопасно. Процент — чёрным (как
+    // основной показатель), подпись — серым.
+    const amountPercent = conversion.amount_percent.toFixed(1).replace(".", ",");
+    amountElement.innerHTML = `<span class="text-slate-900">${amountPercent} %</span> в сумме требований`;
+  }
 }
 
 /**
