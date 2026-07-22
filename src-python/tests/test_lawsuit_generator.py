@@ -16,8 +16,10 @@ import openpyxl
 from logic.lawsuit_generator import (
     parse_iso_date,
     parse_optional_decimal,
+    parse_required_decimal,
     generate_lawsuit_package,
 )
+from legal_tools.importers.excel import LawsuitInputError
 
 
 class DateAndDecimalParsingTests(unittest.TestCase):
@@ -38,6 +40,24 @@ class DateAndDecimalParsingTests(unittest.TestCase):
     def test_parse_optional_decimal_none_returns_none(self):
         """Отсутствующее значение даёт None."""
         self.assertIsNone(parse_optional_decimal(None))
+
+    def test_parse_optional_decimal_accepts_comma(self):
+        """Запятая как десятичный разделитель (RU-локаль) распознаётся."""
+        self.assertEqual(parse_optional_decimal("0,5"), Decimal("0.5"))
+
+    def test_parse_optional_decimal_invalid_raises(self):
+        """Нечисловое значение даёт понятную ошибку, а не сырой ConversionSyntax."""
+        with self.assertRaises(LawsuitInputError):
+            parse_optional_decimal("abc")
+
+    def test_parse_required_decimal_accepts_comma_and_spaces(self):
+        """Сумма с запятой и пробелом-разрядом распознаётся."""
+        self.assertEqual(parse_required_decimal("1 500,50", "0"), Decimal("1500.50"))
+
+    def test_parse_required_decimal_empty_uses_default(self):
+        """Пустое значение подставляет значение по умолчанию."""
+        self.assertEqual(parse_required_decimal("", "0"), Decimal("0"))
+        self.assertEqual(parse_required_decimal(None, "0.1"), Decimal("0.1"))
 
 
 class LawsuitPackageGenerationTests(unittest.TestCase):
@@ -89,6 +109,20 @@ class LawsuitPackageGenerationTests(unittest.TestCase):
         """Результат содержит отформатированную сумму долга."""
         result = generate_lawsuit_package(self.build_valid_request())
         self.assertEqual(result["total_debt"], "51 638,00")
+
+    def test_comma_separated_inputs_do_not_crash(self):
+        """Поля со значениями через запятую (RU-локаль) не роняют генерацию.
+
+        Регрессия на ошибку decimal.ConversionSyntax: поля «Почтовые
+        расходы», «Процент неустойки» и «ограничение» имеют тип text, и
+        пользователь вводит «0,2» / «150,50» — раньше это падало.
+        """
+        request = self.build_valid_request()
+        request["daily_rate_percent"] = "0,2"
+        request["postal_costs"] = "150,50"
+        request["cap_percent"] = "10,5"
+        result = generate_lawsuit_package(request)
+        self.assertEqual(len(result["created_files"]), 3)
 
 
 if __name__ == "__main__":

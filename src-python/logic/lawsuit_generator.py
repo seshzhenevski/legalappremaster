@@ -16,11 +16,13 @@ from decimal import Decimal
 from pathlib import Path
 from typing import List, Optional
 
-from legal_tools.importers.excel import read_excel, group_invoices, compute_lawsuit
+from legal_tools.importers.excel import (
+    read_excel, group_invoices, compute_lawsuit, LawsuitInputError,
+)
 from legal_tools.importers.document_sorter import DocumentSorter
 from legal_tools.generators.lawsuit_docx import generate_lawsuit_docx, generate_opis_docx
 from legal_tools.generators.payment_pdf import generate_payment_order
-from legal_tools.core.formatting import sanitize_filename, fmt
+from legal_tools.core.formatting import sanitize_filename, fmt, parse_dec
 
 BANNER = "=" * 50
 
@@ -42,10 +44,37 @@ def parse_optional_decimal(value: Optional[str]) -> Optional[Decimal]:
 
     Возвращает None, если значение пустое или не задано. Используется
     для необязательного поля «ограничение неустойки в процентах».
+    Терпима к запятой как десятичному разделителю и пробелам-разрядам
+    (поля формы имеют тип text, RU-локаль часто даёт «0,5»).
     """
     if value is None or str(value).strip() == "":
         return None
-    return Decimal(str(value))
+    result = parse_dec(value)
+    if result is None:
+        raise LawsuitInputError(
+            f"Не удалось распознать число: {value!r}. Используйте цифры и "
+            "точку или запятую в качестве десятичного разделителя."
+        )
+    return result
+
+
+def parse_required_decimal(value: Optional[str], default: str) -> Decimal:
+    """
+    Преобразует строку суммы/процента в Decimal, подставляя default,
+    если значение пустое или не задано.
+
+    Как и parse_optional_decimal, терпима к запятой-разделителю и
+    пробелам (ставка неустойки, почтовые расходы — поля типа text).
+    """
+    if value is None or str(value).strip() == "":
+        value = default
+    result = parse_dec(value)
+    if result is None:
+        raise LawsuitInputError(
+            f"Не удалось распознать число: {value!r}. Используйте цифры и "
+            "точку или запятую в качестве десятичного разделителя."
+        )
+    return result
 
 
 def build_lawsuit_context(
@@ -65,13 +94,13 @@ def build_lawsuit_context(
         defendant=request["defendant"],
         invoices=invoices,
         contract_ref=contract_ref,
-        rate=Decimal(str(request["daily_rate_percent"])),
-        rate_text=str(request["daily_rate_percent"]),
+        rate=parse_required_decimal(request["daily_rate_percent"], "0.1"),
+        rate_text=str(request["daily_rate_percent"]).strip().replace(".", ","),
         cap_pct=parse_optional_decimal(request.get("cap_percent")),
         claim_date=claim_date,
         pretenzia_number=request["pretenzia_number"],
         pretenzia_date=parse_iso_date(request["pretenzia_date"]),
-        postal_costs=Decimal(str(request.get("postal_costs", "0"))),
+        postal_costs=parse_required_decimal(request.get("postal_costs"), "0"),
         docs_signed=request.get("docs_signed", True),
     )
     context["_warnings"] = warnings
