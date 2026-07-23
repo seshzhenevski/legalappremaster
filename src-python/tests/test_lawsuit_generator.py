@@ -110,6 +110,22 @@ class LawsuitPackageGenerationTests(unittest.TestCase):
         result = generate_lawsuit_package(self.build_valid_request())
         self.assertEqual(result["total_debt"], "51 638,00")
 
+    def test_statutory_395_generates_files(self):
+        """Режим ст. 395 ГК РФ генерирует пакет и считает по ключевой ставке ЦБ.
+
+        check_rate_online=False — без обращения к сети (по сохранённой истории).
+        """
+        request = self.build_valid_request()
+        request["penalty_type"] = "statutory_395"
+        request["check_rate_online"] = False
+        result = generate_lawsuit_package(request)
+        self.assertEqual(len(result["created_files"]), 3)
+        for file_path in result["created_files"]:
+            self.assertTrue(os.path.exists(file_path))
+        # Долг совпадает с суммой счёта; проценты > 0 (просрочка есть).
+        self.assertEqual(result["total_debt"], "51 638,00")
+        self.assertNotEqual(result["total_penalty"], "0,00")
+
     def test_comma_separated_inputs_do_not_crash(self):
         """Поля со значениями через запятую (RU-локаль) не роняют генерацию.
 

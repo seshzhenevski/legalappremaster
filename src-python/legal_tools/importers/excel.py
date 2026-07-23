@@ -16,6 +16,7 @@ from ..core.formatting import (
     strip_number_prefix, parse_contract_ref,
 )
 from ..core.penalty import calc_group, fifo_allocate
+from ..core.penalty_395 import calc_395
 from ..core.duty import calculate_state_duty
 
 try:
@@ -243,6 +244,68 @@ def compute_lawsuit(
         "pretenzia_number": pretenzia_number, "pretenzia_date": pretenzia_date,
         "postal_costs": postal_costs,
         "docs_signed": docs_signed,
+    }
+
+
+def compute_lawsuit_395(
+    defendant: dict, invoices: List[dict], contract_ref: str, claim_date: date,
+    pretenzia_number: str, pretenzia_date: date, postal_costs: Decimal,
+    history, docs_signed: bool = True,
+) -> dict:
+    """Считает проценты по ст. 395 ГК РФ для искового заявления.
+
+    В отличие от договорной неустойки (compute_lawsuit) считает по единому
+    хронологическому реестру ключевой ставки ЦБ (core.penalty_395.calc_395):
+    положительные счета — это появления задолженности, отрицательные строки —
+    погашения. history — история ключевой ставки (передаёт слой logic, чтобы
+    importers не зависел от сети). Формирует контекст для генерации docx с
+    признаком penalty_type="statutory_395" и строками таблицы rows_395."""
+    debts = [
+        (inv["start"], inv["amount"])
+        for inv in invoices
+        if inv["included"] and not inv.get("display_only")
+    ]
+    payments = [
+        (inv["due_date"], -inv["amount"])
+        for inv in invoices
+        if inv.get("display_only")
+    ]
+    if not debts:
+        raise LawsuitInputError(
+            "Нет ни одного счёта с наступившим сроком оплаты — иск не может быть сформирован."
+        )
+
+    result = calc_395(debts, payments, claim_date, history)
+    total_debt = result["total_principal"]
+    total_penalty = result["total_interest"]
+    claim_amount = (total_debt + total_penalty).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    duty_amount = Decimal(str(calculate_state_duty(float(claim_amount))))
+    period_start = result["period_start"] or claim_date
+
+    table_rows = [
+        {
+            "invoice_date": inv["invoice_date"], "number": inv["number"],
+            "amount": inv["amount"], "due_date": inv["due_date"],
+        }
+        for inv in invoices if inv["included"]
+    ]
+
+    contract_full, _contract_number, contract_date = _parse_contract_ref_local(contract_ref)
+
+    return {
+        "penalty_type": "statutory_395",
+        "rows_395": result["rows"],
+        "table_rows": table_rows,
+        "total_debt": total_debt, "total_penalty": total_penalty,
+        "cap_info": None,
+        "claim_amount": claim_amount, "duty_amount": duty_amount,
+        "period_start": period_start, "claim_date": claim_date,
+        "contract_ref": contract_full, "contract_date": contract_date,
+        "defendant": defendant,
+        "pretenzia_number": pretenzia_number, "pretenzia_date": pretenzia_date,
+        "postal_costs": postal_costs,
+        "docs_signed": docs_signed,
+        "_warnings_calc": result["warnings"],
     }
 
 

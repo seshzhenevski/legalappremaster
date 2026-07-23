@@ -73,6 +73,7 @@ export async function requestPenaltyCalculation(
   dailyRatePercent,
   rateType,
   capPercent,
+  penaltyType = "contractual",
 ) {
   return callBackendMethod("calculate_penalty", {
     debts: debts,
@@ -81,6 +82,7 @@ export async function requestPenaltyCalculation(
     daily_rate_percent: dailyRatePercent,
     rate_type: rateType,
     cap_percent: capPercent,
+    penalty_type: penaltyType,
   });
 }
 

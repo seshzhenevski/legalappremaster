@@ -45,9 +45,10 @@ def handle_calculate_penalty(params: dict, report_progress) -> dict:
         debts_input=params["debts"],
         payments_input=params.get("payments", []),
         period_end_date=params["period_end_date"],
-        daily_rate_percent=params["daily_rate_percent"],
+        daily_rate_percent=params.get("daily_rate_percent", "0.1"),
         rate_type=params.get("rate_type", "day"),
         cap_percent=params.get("cap_percent"),
+        penalty_type=params.get("penalty_type", "contractual"),
     )
 
 

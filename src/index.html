@@ -715,16 +715,42 @@
                     class="flex-1 min-w-0 px-2 py-1.5 border border-slate-300 rounded-lg text-sm" />
                   <span class="text-xs text-slate-500 whitespace-nowrap shrink-0">руб.</span>
                 </div>
-                <div class="flex items-center gap-1 flex-wrap gap-y-2 w-full">
+
+                <!-- Тип неустойки: договорная | ст. 395 ГК РФ -->
+                <div class="flex items-center gap-2 flex-wrap gap-y-2">
+                  <label class="text-xs text-slate-600 whitespace-nowrap shrink-0">Тип неустойки:</label>
+                  <div id="lawsuit-penalty-type-toggle"
+                    class="inline-flex rounded-lg border border-slate-300 overflow-hidden">
+                    <button type="button" data-penalty-type="contractual"
+                      class="lawsuit-penalty-type-option px-3 py-1.5 text-sm">договорная</button>
+                    <button type="button" data-penalty-type="statutory_395"
+                      class="lawsuit-penalty-type-option px-3 py-1.5 text-sm border-l border-slate-300">ст. 395 ГК РФ</button>
+                  </div>
+                </div>
+
+                <!-- Дата расчёта (цена иска на дату) — нужна обоим режимам -->
+                <div class="flex items-center gap-2 flex-wrap gap-y-2">
+                  <label class="text-xs text-slate-600 whitespace-nowrap shrink-0">Расчёт на дату:</label>
+                  <div id="lawsuit-claim-date-slot" class="w-24 shrink-0"></div>
+                </div>
+
+                <!-- Договорная неустойка: процент + ограничение -->
+                <div id="lawsuit-contractual-fields" class="flex items-center gap-1 flex-wrap gap-y-2 w-full">
                   <label class="text-xs text-slate-600 whitespace-nowrap shrink-0">Процент неустойки:</label>
                   <input type="text" id="lawsuit-rate" value="0.1"
                     class="w-10 shrink-0 px-1.5 py-1.5 border border-slate-300 rounded-lg text-sm text-center" />
-                  <span class="text-xs text-slate-500 whitespace-nowrap shrink-0">% в день до</span>
-                  <div id="lawsuit-claim-date-slot" class="w-24 shrink-0"></div>
-                  <span class="text-xs text-slate-500 whitespace-nowrap shrink-0">, не более</span>
+                  <span class="text-xs text-slate-500 whitespace-nowrap shrink-0">% в день, не более</span>
                   <input type="text" id="lawsuit-cap"
                     class="w-10 shrink-0 px-1.5 py-1.5 border border-slate-300 rounded-lg text-sm text-center" />
                   <span class="text-xs text-slate-500 shrink-0">%</span>
+                </div>
+
+                <!-- ст. 395 ГК РФ: поля ставки скрыты -->
+                <div id="lawsuit-395-info"
+                  class="hidden flex items-start gap-2 text-xs text-slate-600 bg-blue-50 border-l-4 border-blue-400 rounded px-3 py-2">
+                  <svg class="lucide shrink-0 mt-0.5 text-blue-500" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
+                  <span>Сумма рассчитывается автоматически по периодам на основе
+                    <b>Ключевой ставки Банка России</b>.</span>
                 </div>
               </div>
             </div>
@@ -1112,13 +1138,24 @@
             <!-- Ставка неустойки -->
             <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
               <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 7h6v6" /> <path d="m22 7-8.5 8.5-5-5L2 17" /></svg> Ставка неустойки</div>
-              <div class="border-t border-slate-100 pt-3">
+              <div class="border-t border-slate-100 pt-3 space-y-3">
+                <!-- Тип неустойки: договорная | ст. 395 ГК РФ -->
+                <div class="flex items-center gap-2 flex-wrap gap-y-2">
+                  <span class="text-xs text-slate-600 whitespace-nowrap shrink-0">Тип неустойки:</span>
+                  <div id="penalty-type-toggle"
+                    class="inline-flex rounded-lg border border-slate-300 overflow-hidden">
+                    <button type="button" data-penalty-type="contractual"
+                      class="penalty-type-option px-3 py-1.5 text-sm">договорная</button>
+                    <button type="button" data-penalty-type="statutory_395"
+                      class="penalty-type-option px-3 py-1.5 text-sm border-l border-slate-300">ст. 395 ГК РФ</button>
+                  </div>
+                </div>
+
                 <!--
-                  Компактный ряд управляющих элементов. flex-wrap — при узком
-                  окне лишние элементы переносятся на следующую строку, а не
-                  обрезаются. Пояснения под инпутами убраны по ТЗ.
+                  Договорная неустойка: ставка/тип/капинг. flex-wrap — при узком
+                  окне лишние элементы переносятся на следующую строку.
                 -->
-                <div class="flex items-center gap-1.5 flex-wrap gap-y-2">
+                <div id="penalty-contractual-fields" class="flex items-center gap-1.5 flex-wrap gap-y-2">
                   <span class="text-xs text-slate-600 whitespace-nowrap shrink-0">Ставка неустойки:</span>
 
                   <div class="shrink-0 flex items-center gap-1">
@@ -1140,6 +1177,14 @@
                       class="w-10 h-9 px-1.5 border border-slate-300 rounded-lg text-sm text-center" />
                     <span class="text-xs text-slate-500">%</span>
                   </div>
+                </div>
+
+                <!-- ст. 395 ГК РФ: поля ставки скрыты, ставка берётся из базы ЦБ -->
+                <div id="penalty-395-info"
+                  class="hidden flex items-start gap-2 text-xs text-slate-600 bg-blue-50 border-l-4 border-blue-400 rounded px-3 py-2">
+                  <svg class="lucide shrink-0 mt-0.5 text-blue-500" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
+                  <span>Сумма рассчитывается автоматически по периодам на основе
+                    <b>Ключевой ставки Банка России</b>.</span>
                 </div>
               </div>
             </div>
@@ -1189,7 +1234,7 @@
 
           <div class="flex-1 min-h-0 overflow-auto thin-scroll">
             <table id="penalty-result-table" class="w-full text-xs border-collapse">
-              <thead>
+              <thead id="penalty-result-thead">
                 <tr class="text-center text-slate-500 border-b border-slate-200">
                   <th class="py-1 px-2" rowspan="2">Месяц</th>
                   <th class="py-1 px-2" rowspan="2">Начислено</th>

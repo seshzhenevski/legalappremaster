@@ -21,6 +21,39 @@ import { showToast } from "./toast.js";
 // после каждого расчёта).
 let lastCalculationBlocks = [];
 let lastCalculationTotals = { totalDebt: "", totalPenalty: "" };
+// Строки последнего расчёта по ст. 395 (единая таблица) для копирования.
+let last395Rows = [];
+// Текущий тип неустойки: "contractual" | "statutory_395".
+let currentPenaltyType = "contractual";
+
+// Заголовки таблицы результата для двух режимов (переключаются в thead).
+const THEAD_CONTRACTUAL = `
+  <tr class="text-center text-slate-500 border-b border-slate-200">
+    <th class="py-1 px-2" rowspan="2">Месяц</th>
+    <th class="py-1 px-2" rowspan="2">Начислено</th>
+    <th class="py-1 px-2" rowspan="2">Долг</th>
+    <th class="py-1 px-2" colspan="3">Период просрочки</th>
+    <th class="py-1 px-2" rowspan="2">Формула</th>
+    <th class="py-1 px-2" rowspan="2">Пени</th>
+  </tr>
+  <tr class="text-center text-slate-500 border-b border-slate-200">
+    <th class="py-1 px-2">с</th>
+    <th class="py-1 px-2">по</th>
+    <th class="py-1 px-2">дней</th>
+  </tr>`;
+const THEAD_395 = `
+  <tr class="text-center text-slate-500 border-b border-slate-200">
+    <th class="py-1 px-2" rowspan="2">Задолженность</th>
+    <th class="py-1 px-2" colspan="3">Период просрочки</th>
+    <th class="py-1 px-2" rowspan="2">Ставка</th>
+    <th class="py-1 px-2" rowspan="2">Формула</th>
+    <th class="py-1 px-2" rowspan="2">Проценты</th>
+  </tr>
+  <tr class="text-center text-slate-500 border-b border-slate-200">
+    <th class="py-1 px-2">с</th>
+    <th class="py-1 px-2">по</th>
+    <th class="py-1 px-2">дней</th>
+  </tr>`;
 
 /**
  * Инициализирует вкладку расчёта неустойки.
@@ -54,7 +87,38 @@ export function initPenaltyTab() {
     .getElementById("penalty-period-end-slot")
     .appendChild(createDateField({ id: "penalty-period-end" }));
 
+  document.querySelectorAll("#penalty-type-toggle .penalty-type-option").forEach((button) => {
+    button.addEventListener("click", () => setPenaltyType(button.dataset.penaltyType));
+  });
+  setPenaltyType("contractual");
+
   addDebtRow();
+}
+
+/**
+ * Переключает тип неустойки (договорная / ст. 395 ГК РФ).
+ *
+ * Обновляет подсветку кнопок сегмент-контрола, показывает или скрывает поля
+ * ставки и информационный блок, а также заголовок таблицы результата.
+ */
+function setPenaltyType(type) {
+  currentPenaltyType = type;
+
+  document.querySelectorAll("#penalty-type-toggle .penalty-type-option").forEach((button) => {
+    const active = button.dataset.penaltyType === type;
+    button.classList.toggle("bg-blue-600", active);
+    button.classList.toggle("text-white", active);
+    button.classList.toggle("bg-white", !active);
+    button.classList.toggle("text-slate-600", !active);
+    button.classList.toggle("hover:bg-slate-50", !active);
+  });
+
+  const is395 = type === "statutory_395";
+  document.getElementById("penalty-contractual-fields").classList.toggle("hidden", is395);
+  document.getElementById("penalty-395-info").classList.toggle("hidden", !is395);
+  document.getElementById("penalty-result-thead").innerHTML = is395
+    ? THEAD_395
+    : THEAD_CONTRACTUAL;
 }
 
 /**
@@ -168,6 +232,7 @@ async function handlePenaltyCalculation() {
         dailyRatePercent || "0.1",
         rateType,
         capPercent,
+        currentPenaltyType,
       );
       showPenaltyResult(result);
     });
@@ -183,28 +248,86 @@ async function handlePenaltyCalculation() {
  * ограничении (если сработало) и детальную таблицу расчёта по периодам.
  */
 function showPenaltyResult(result) {
-  lastCalculationBlocks = result.blocks;
+  const is395 = result.mode === "statutory_395";
+  lastCalculationBlocks = result.blocks || [];
+  last395Rows = result.rows_395 || [];
   lastCalculationTotals = {
     totalDebt: result.total_debt,
     totalPenalty: result.total_penalty,
+    mode: result.mode,
   };
+
+  // Заголовок таблицы соответствует режиму (на случай, если данные пришли
+  // асинхронно после переключения — приводим thead к фактическому режиму).
+  document.getElementById("penalty-result-thead").innerHTML = is395
+    ? THEAD_395
+    : THEAD_CONTRACTUAL;
 
   document.getElementById("penalty-cap-warning").textContent = result.cap_info
     ? `Неустойка ограничена ${result.cap_info.cap_percent}% от суммы долга ` +
       `(без ограничения было бы ${result.cap_info.uncapped_total} ₽).`
     : "";
 
-  document.getElementById("penalty-result-table-body").innerHTML = buildPenaltyTableRows(
-    result.blocks,
-    result.total_debt,
-    result.total_penalty,
-  );
+  document.getElementById("penalty-result-table-body").innerHTML = is395
+    ? build395TableRows(result.rows_395, result.total_debt, result.total_penalty)
+    : buildPenaltyTableRows(result.blocks, result.total_debt, result.total_penalty);
 
   if (result.warnings.length) {
     showPenaltyStatus(result.warnings.join(" "), true);
   } else {
     showPenaltyStatus("✅ Расчёт выполнен.", false);
   }
+}
+
+/**
+ * Строит строки единой таблицы расчёта по ст. 395 ГК РФ.
+ *
+ * Строки начисления процентов чередуются со строками-событиями (новая
+ * задолженность / погашение части долга), в конце — две итоговые строки.
+ */
+function build395TableRows(rows, totalDebt, totalPenalty) {
+  const html = [];
+  for (const row of rows) {
+    if (row.type === "interest") {
+      html.push(`
+        <tr class="border-b border-slate-100">
+          <td class="py-1 px-2 text-right">${row.debt}</td>
+          <td class="py-1 px-2 text-center">${row.from}</td>
+          <td class="py-1 px-2 text-center">${row.to}</td>
+          <td class="py-1 px-2 text-center">${row.days}</td>
+          <td class="py-1 px-2 text-center">${row.rate}</td>
+          <td class="py-1 px-2 text-right">${row.formula}</td>
+          <td class="py-1 px-2 text-right">${row.interest}</td>
+        </tr>
+      `);
+    } else {
+      const isDebt = row.type === "debt";
+      const label = isDebt ? "Новая задолженность" : "Погашение части долга";
+      const rowClass = isDebt ? "bg-emerald-50" : "bg-amber-50";
+      html.push(`
+        <tr class="border-b border-slate-100 ${rowClass} text-slate-600">
+          <td class="py-1 px-2 text-right">${row.amount}</td>
+          <td class="py-1 px-2 text-center">${row.date}</td>
+          <td class="py-1 px-2" colspan="5">${label}</td>
+        </tr>
+      `);
+    }
+  }
+
+  html.push(`
+    <tr>
+      <td colspan="7" class="py-1 px-2 text-right font-semibold">
+        Сумма основного долга: ${totalDebt} руб.
+      </td>
+    </tr>
+    <tr>
+      <td colspan="7" class="py-1 px-2 text-right font-semibold">
+        Сумма процентов: ${totalPenalty} руб.
+      </td>
+    </tr>
+  `);
+
+  return html.join("");
 }
 
 /**
@@ -302,6 +425,10 @@ function buildPenaltyTableRows(blocks, totalDebt, totalPenalty) {
  * успешного расчёта.
  */
 async function copyPenaltyTableToClipboard() {
+  if (lastCalculationTotals.mode === "statutory_395") {
+    await copy395TableToClipboard();
+    return;
+  }
   if (lastCalculationBlocks.length === 0) {
     showPenaltyStatus("Сначала выполните расчёт.", true);
     return;
@@ -344,6 +471,112 @@ async function copyPenaltyTableToClipboard() {
     new ClipboardItem({ "text/html": htmlBlob, "text/plain": textBlob }),
   ]);
   showToast("Скопировано в буфер обмена");
+}
+
+/**
+ * Копирует единую таблицу расчёта по ст. 395 ГК РФ в буфер обмена.
+ *
+ * Готовит и HTML (форматированная таблица для Word/Excel), и TSV (обычный
+ * текст) из строк последнего расчёта по ст. 395.
+ */
+async function copy395TableToClipboard() {
+  if (last395Rows.length === 0) {
+    showPenaltyStatus("Сначала выполните расчёт.", true);
+    return;
+  }
+
+  const headers = ["Задолженность", "С", "По", "Дней", "Ставка", "Формула", "Проценты"];
+  const tsvRows = [headers.join("\t")];
+  for (const row of last395Rows) {
+    if (row.type === "interest") {
+      tsvRows.push(
+        [row.debt, row.from, row.to, row.days, row.rate, row.formula, row.interest].join("\t"),
+      );
+    } else {
+      const label = row.type === "debt" ? "Новая задолженность" : "Погашение части долга";
+      tsvRows.push([row.amount, row.date, label, "", "", "", ""].join("\t"));
+    }
+  }
+  tsvRows.push(`Сумма основного долга: ${lastCalculationTotals.totalDebt} руб.`);
+  tsvRows.push(`Сумма процентов: ${lastCalculationTotals.totalPenalty} руб.`);
+
+  const html = build395ClipboardHtml(
+    last395Rows,
+    lastCalculationTotals.totalDebt,
+    lastCalculationTotals.totalPenalty,
+  );
+  const htmlBlob = new Blob([html], { type: "text/html" });
+  const textBlob = new Blob([tsvRows.join("\n")], { type: "text/plain" });
+
+  await navigator.clipboard.write([
+    new ClipboardItem({ "text/html": htmlBlob, "text/plain": textBlob }),
+  ]);
+  showToast("Скопировано в буфер обмена");
+}
+
+/**
+ * Строит самодостаточную HTML-таблицу расчёта по ст. 395 для буфера обмена.
+ */
+function build395ClipboardHtml(rows, totalDebt, totalPenalty) {
+  const tableStyle =
+    "border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:12px;";
+  const thStyle =
+    "border:1px solid #999999;padding:4px 8px;background:#f3f4f6;text-align:center;";
+  const tdStyle = "border:1px solid #999999;padding:4px 8px;";
+  const tdRight = `${tdStyle}text-align:right;`;
+  const tdCenter = `${tdStyle}text-align:center;`;
+  const tdBoldRight = `${tdRight}font-weight:bold;`;
+
+  const bodyRows = [];
+  for (const row of rows) {
+    if (row.type === "interest") {
+      bodyRows.push(`
+        <tr>
+          <td style="${tdRight}">${row.debt}</td>
+          <td style="${tdCenter}">${row.from}</td>
+          <td style="${tdCenter}">${row.to}</td>
+          <td style="${tdCenter}">${row.days}</td>
+          <td style="${tdCenter}">${row.rate}</td>
+          <td style="${tdRight}">${row.formula}</td>
+          <td style="${tdRight}">${row.interest}</td>
+        </tr>
+      `);
+    } else {
+      const label = row.type === "debt" ? "Новая задолженность" : "Погашение части долга";
+      const bg = row.type === "debt" ? "#d1fae5" : "#fef3c7";
+      bodyRows.push(`
+        <tr style="background:${bg};">
+          <td style="${tdRight}">${row.amount}</td>
+          <td style="${tdCenter}">${row.date}</td>
+          <td style="${tdStyle}" colspan="5">${label}</td>
+        </tr>
+      `);
+    }
+  }
+  bodyRows.push(`
+    <tr><td style="${tdBoldRight}" colspan="7">Сумма основного долга: ${totalDebt} руб.</td></tr>
+    <tr><td style="${tdBoldRight}" colspan="7">Сумма процентов: ${totalPenalty} руб.</td></tr>
+  `);
+
+  return `
+    <table style="${tableStyle}">
+      <thead>
+        <tr>
+          <th style="${thStyle}" rowspan="2">Задолженность</th>
+          <th style="${thStyle}" colspan="3">Период просрочки</th>
+          <th style="${thStyle}" rowspan="2">Ставка</th>
+          <th style="${thStyle}" rowspan="2">Формула</th>
+          <th style="${thStyle}" rowspan="2">Проценты</th>
+        </tr>
+        <tr>
+          <th style="${thStyle}">с</th>
+          <th style="${thStyle}">по</th>
+          <th style="${thStyle}">дней</th>
+        </tr>
+      </thead>
+      <tbody>${bodyRows.join("")}</tbody>
+    </table>
+  `;
 }
 
 /**
@@ -491,7 +724,9 @@ function clearPenaltyForm() {
   document.getElementById("penalty-cap").value = "";
 
   lastCalculationBlocks = [];
+  last395Rows = [];
   lastCalculationTotals = { totalDebt: "", totalPenalty: "" };
+  setPenaltyType("contractual");
   document.getElementById("penalty-cap-warning").textContent = "";
   document.getElementById("penalty-result-table-body").innerHTML = "";
   showPenaltyStatus("Введите данные и нажмите «Рассчитать»", false);

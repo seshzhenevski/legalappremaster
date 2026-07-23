@@ -91,5 +91,50 @@ class PenaltyCalculationTests(unittest.TestCase):
         self.assertEqual(result["blocks"][0]["initial_amount"], "100 000,00")
 
 
+class Statutory395Tests(unittest.TestCase):
+    """Проверки расчёта процентов по ст. 395 ГК РФ (по ключевой ставке ЦБ)."""
+
+    def test_matches_reference_example(self):
+        """Полный пример из ТЗ («Правки.pdf») сходится до копейки.
+
+        Долги 123456 (01.01.2026), +32132 (11.03), +1235 (05.05); погашение
+        2000 (12.03); период до 23.07.2026. Ожидается остаток 154 823,00 и
+        проценты 12 063,31. check_rate_online=False — без обращения к сети.
+        """
+        result = calculate_penalty_for_debts(
+            debts_input=[
+                {"amount": "123456.00", "start_date": "2026-01-01"},
+                {"amount": "32132.00", "start_date": "2026-03-11"},
+                {"amount": "1235.00", "start_date": "2026-05-05"},
+            ],
+            payments_input=[{"amount": "2000.00", "date": "2026-03-12"}],
+            period_end_date="2026-07-23",
+            daily_rate_percent="0.1",
+            penalty_type="statutory_395",
+            check_rate_online=False,
+        )
+        self.assertEqual(result["mode"], "statutory_395")
+        self.assertEqual(result["total_debt"], "154 823,00")
+        self.assertEqual(result["total_penalty"], "12 063,31")
+
+    def test_rows_contain_events_and_interest(self):
+        """Строки таблицы содержат и начисления, и события долга/погашения."""
+        result = calculate_penalty_for_debts(
+            debts_input=[
+                {"amount": "123456.00", "start_date": "2026-01-01"},
+                {"amount": "32132.00", "start_date": "2026-03-11"},
+            ],
+            payments_input=[{"amount": "2000.00", "date": "2026-03-12"}],
+            period_end_date="2026-07-23",
+            daily_rate_percent="0.1",
+            penalty_type="statutory_395",
+            check_rate_online=False,
+        )
+        types = {row["type"] for row in result["rows_395"]}
+        self.assertEqual(types, {"interest", "debt", "payment"})
+        # Первая строка — начисление процентов (первичный долг без события).
+        self.assertEqual(result["rows_395"][0]["type"], "interest")
+
+
 if __name__ == "__main__":
     unittest.main()

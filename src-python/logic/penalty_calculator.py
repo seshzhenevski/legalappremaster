@@ -12,7 +12,9 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import List, Optional, Tuple
 
 from legal_tools.core.penalty import calc_group, fifo_allocate
+from legal_tools.core.penalty_395 import calc_395
 from legal_tools.core.formatting import fmt, next_day
+from logic.key_rate_service import ensure_fresh_history
 
 
 def parse_iso_date(iso_date_string: str) -> date:
@@ -71,6 +73,8 @@ def calculate_penalty_for_debts(
     daily_rate_percent: str,
     rate_type: str = "day",
     cap_percent: Optional[str] = None,
+    penalty_type: str = "contractual",
+    check_rate_online: bool = True,
 ) -> dict:
     """
     Рассчитывает неустойку по списку задолженностей с учётом оплат.
@@ -78,10 +82,16 @@ def calculate_penalty_for_debts(
     Принимает задолженности, платежи, дату окончания периода, ставку в
     процентах, тип ставки ("day" — дневная, "year" — годовая, делится на 365)
     и необязательное ограничение неустойки в процентах от суммы долга.
-    Распределяет платежи по FIFO и возвращает словарь с итоговым долгом,
-    итоговой (уже ограниченной, если капинг сработал) неустойкой и
-    детальными строками расчёта по каждой задолженности.
+    penalty_type задаёт способ расчёта: "contractual" — договорная неустойка
+    (текущая логика), "statutory_395" — проценты по ст. 395 ГК РФ по ключевой
+    ставке ЦБ (ставка/тип/ограничение при этом игнорируются). Возвращает
+    словарь с итоговым долгом, итоговой неустойкой и детальными строками.
     """
+    if penalty_type == "statutory_395":
+        return _calculate_statutory_395(
+            debts_input, payments_input, period_end_date, check_rate_online,
+        )
+
     debt_records = build_debt_records_from_input(debts_input)
     payment_pairs = build_payment_pairs_from_input(payments_input)
 
@@ -118,11 +128,80 @@ def calculate_penalty_for_debts(
     total_penalty, cap_info = apply_penalty_cap(total_debt, total_penalty_raw, cap_percent)
 
     return {
+        "mode": "contractual",
         "total_debt": fmt(total_debt),
         "total_penalty": fmt(total_penalty),
         "blocks": calculation_blocks,
         "warnings": allocation_warnings,
         "cap_info": cap_info,
+    }
+
+
+def serialize_395_rows(rows: List[dict]) -> List[dict]:
+    """
+    Приводит строки расчёта по ст. 395 (из core.penalty_395) к JSON-виду.
+
+    Оставляет только строковые/числовые поля, пригодные для передачи
+    фронтенду и генерации документов: строки начисления процентов и
+    строки-события (новая задолженность / погашение).
+    """
+    serialized: List[dict] = []
+    for row in rows:
+        if row["type"] == "interest":
+            serialized.append({
+                "type": "interest",
+                "debt": row["balance_fmt"],
+                "from": row["from_fmt"],
+                "to": row["to_fmt"],
+                "days": row["days"],
+                "rate": row["rate_fmt"],
+                "formula": row["formula"],
+                "interest": row["interest_fmt"],
+            })
+        else:  # debt | payment
+            serialized.append({
+                "type": row["type"],
+                "amount": row["amount_fmt"],
+                "date": row["date_fmt"],
+            })
+    return serialized
+
+
+def _calculate_statutory_395(
+    debts_input: List[dict],
+    payments_input: List[dict],
+    period_end_date: str,
+    check_rate_online: bool,
+) -> dict:
+    """
+    Рассчитывает проценты по ст. 395 ГК РФ по ключевой ставке ЦБ.
+
+    Строит единый хронологический реестр (core.penalty_395.calc_395),
+    подтягивая при необходимости актуальную ставку из API ЦБ. Возвращает
+    словарь того же «внешнего» формата, что и договорный расчёт, но с
+    признаком mode="statutory_395" и строками rows_395 для единой таблицы.
+    """
+    end_date = parse_iso_date(period_end_date)
+    debts = [
+        (parse_iso_date(item["start_date"]), Decimal(str(item["amount"])))
+        for item in debts_input
+    ]
+    payments = [
+        (parse_iso_date(item["date"]), Decimal(str(item["amount"])))
+        for item in payments_input
+    ]
+
+    history, rate_warnings = ensure_fresh_history(end_date, allow_network=check_rate_online)
+    result = calc_395(debts, payments, end_date, history)
+
+    return {
+        "mode": "statutory_395",
+        "total_debt": fmt(result["total_principal"]),
+        "total_penalty": fmt(result["total_interest"]),
+        "blocks": [],
+        "rows_395": serialize_395_rows(result["rows"]),
+        "warnings": rate_warnings + result["warnings"],
+        "cap_info": None,
     }
 
 

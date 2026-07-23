@@ -229,6 +229,60 @@ def _law_build_penalty_table(
     return table
 
 
+def _law_build_penalty_table_395(
+    doc, rows_395: List[dict], total_debt: Decimal, total_penalty: Decimal,
+):
+    """Таблица расчёта процентов по ст. 395 ГК РФ (единый реестр по ставкам ЦБ).
+
+    Колонки: Задолженность | Период просрочки (с/по/дней) | Ставка | Формула |
+    Проценты. Строки-события (новая задолженность / погашение) выводятся
+    отдельной строкой с объединёнными ячейками, как в образце из ТЗ."""
+    table = doc.add_table(rows=2, cols=7)
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+    debt_hdr = table.cell(0, 0).merge(table.cell(1, 0))
+    _law_cell(debt_hdr, "Задолженность", align=WD_ALIGN_PARAGRAPH.CENTER)
+    period_cell = table.cell(0, 1).merge(table.cell(0, 3))
+    _law_cell(period_cell, "Период просрочки", align=WD_ALIGN_PARAGRAPH.CENTER)
+    for col, text in zip((1, 2, 3), ("с", "по", "дней")):
+        _law_cell(table.cell(1, col), text, align=WD_ALIGN_PARAGRAPH.CENTER)
+    for col, text in zip((4, 5, 6), ("Ставка", "Формула", "Проценты")):
+        merged = table.cell(0, col).merge(table.cell(1, col))
+        _law_cell(merged, text, align=WD_ALIGN_PARAGRAPH.CENTER)
+
+    for row in rows_395:
+        cells = table.add_row().cells
+        if row["type"] == "interest":
+            _law_cell(cells[0], row["balance_fmt"], align=WD_ALIGN_PARAGRAPH.RIGHT)
+            _law_cell(cells[1], row["from_fmt"], align=WD_ALIGN_PARAGRAPH.CENTER)
+            _law_cell(cells[2], row["to_fmt"], align=WD_ALIGN_PARAGRAPH.CENTER)
+            _law_cell(cells[3], str(row["days"]), align=WD_ALIGN_PARAGRAPH.CENTER)
+            _law_cell(cells[4], row["rate_fmt"], align=WD_ALIGN_PARAGRAPH.CENTER)
+            _law_cell(cells[5], row["formula"], align=WD_ALIGN_PARAGRAPH.RIGHT)
+            _law_cell(cells[6], row["interest_fmt"], align=WD_ALIGN_PARAGRAPH.RIGHT)
+        else:
+            label = "Новая задолженность" if row["type"] == "debt" else "Погашение части долга"
+            _law_cell(cells[0], row["amount_fmt"], align=WD_ALIGN_PARAGRAPH.RIGHT)
+            _law_cell(cells[1], row["date_fmt"], align=WD_ALIGN_PARAGRAPH.CENTER)
+            merged = cells[2].merge(cells[6])
+            _law_cell(merged, label, align=WD_ALIGN_PARAGRAPH.LEFT)
+
+    for label in (
+        f"Сумма основного долга: {fmt(total_debt)} руб.",
+        f"Сумма процентов: {fmt(total_penalty)} руб.",
+    ):
+        cells = table.add_row().cells
+        merged = cells[0]
+        for c in cells[1:]:
+            merged = merged.merge(c)
+        _law_cell(merged, label, bold=True, align=WD_ALIGN_PARAGRAPH.RIGHT)
+
+    _law_set_table_borders(table, color="CCCCCC", sz=4)
+    _law_set_widths(table, [70, 60, 60, 30, 46, 128, 78])
+    _law_set_cell_margins(table, top_cm=0.05, bottom_cm=0.05, left_cm=0.1, right_cm=0.1)
+    return table
+
+
 def generate_lawsuit_docx(path: str, ctx: dict) -> None:
     """Строит docx искового заявления «с нуля» (python-docx), полностью
     повторяя структуру/оформление образца Исковое_заявление.docx."""
@@ -455,25 +509,43 @@ def generate_lawsuit_docx(path: str, ctx: dict) -> None:
     )
     add_par("")
 
-    rate_str = str(ctx["rate"])
-    if "." in rate_str:
-        rate_str = rate_str.rstrip("0").rstrip(".")
-    rate_display = rate_str.replace(".", ",")
-    add_par(
-        f"Пунктом 4.7. Договора предусмотрена договорная неустойка в случае "
-        f"просрочки Заказчиком срока оплаты, в размере {rate_display}% от "
-        f"неоплаченной суммы задолженности за каждый день просрочки оплаты.",
-        justify_body=True,
-    )
-    add_par("Расчет задолженности:", justify_body=True)
+    is_395 = ctx.get("penalty_type") == "statutory_395"
 
-    _law_build_penalty_table(doc, ctx["blocks"], ctx["total_debt"], ctx["total_penalty"], ctx.get("cap_info"))
+    if is_395:
+        add_par(
+            "За неправомерное пользование чужими денежными средствами вследствие "
+            "просрочки в их уплате на сумму задолженности подлежат начислению "
+            "проценты в соответствии со ст. 395 ГК РФ, размер которых определяется "
+            "ключевой ставкой Банка России, действовавшей в соответствующие периоды.",
+            justify_body=True,
+        )
+        add_par("Расчет процентов по ст. 395 ГК РФ:", justify_body=True)
+        _law_build_penalty_table_395(
+            doc, ctx["rows_395"], ctx["total_debt"], ctx["total_penalty"])
+    else:
+        rate_str = str(ctx["rate"])
+        if "." in rate_str:
+            rate_str = rate_str.rstrip("0").rstrip(".")
+        rate_display = rate_str.replace(".", ",")
+        add_par(
+            f"Пунктом 4.7. Договора предусмотрена договорная неустойка в случае "
+            f"просрочки Заказчиком срока оплаты, в размере {rate_display}% от "
+            f"неоплаченной суммы задолженности за каждый день просрочки оплаты.",
+            justify_body=True,
+        )
+        add_par("Расчет задолженности:", justify_body=True)
+        _law_build_penalty_table(
+            doc, ctx["blocks"], ctx["total_debt"], ctx["total_penalty"], ctx.get("cap_info"))
 
     add_par("")
     claim_date_str = ctx["claim_date"].strftime("%d.%m.%Y")
     p = add_par(justify_body=True)
-    _law_p_run(p, f"На {claim_date_str} договорная неустойка в связи с просрочкой "
-                  f"оплаты услуг Исполнителя по Договору составила ")
+    if is_395:
+        _law_p_run(p, f"На {claim_date_str} проценты за пользование чужими денежными "
+                      f"средствами в соответствии со ст. 395 ГК РФ составили ")
+    else:
+        _law_p_run(p, f"На {claim_date_str} договорная неустойка в связи с просрочкой "
+                      f"оплаты услуг Исполнителя по Договору составила ")
     _law_p_run(p, money_words(ctx["total_penalty"]))
     _law_p_run(p, ".")
     add_par("")
@@ -491,8 +563,13 @@ def generate_lawsuit_docx(path: str, ctx: dict) -> None:
 
     period_start_str = ctx["period_start"].strftime("%d.%m.%Y")
     p = add_par(justify_body=True)
-    _law_p_run(p, f"- договорная неустойка за период с {period_start_str} по "
-                  f"{claim_date_str} в соответствии с п. 4.7. Договора в размере ")
+    if is_395:
+        _law_p_run(p, f"- проценты за пользование чужими денежными средствами в "
+                      f"соответствии со ст. 395 ГК РФ за период с {period_start_str} "
+                      f"по {claim_date_str} в размере ")
+    else:
+        _law_p_run(p, f"- договорная неустойка за период с {period_start_str} по "
+                      f"{claim_date_str} в соответствии с п. 4.7. Договора в размере ")
     _law_p_run(p, money_words(ctx['total_penalty']), bold=True)
     _law_p_run(p, ".")
     add_par("")
@@ -520,17 +597,37 @@ def generate_lawsuit_docx(path: str, ctx: dict) -> None:
     add_par("")
 
     next_day_str = next_day(ctx["claim_date"], False).strftime("%d.%m.%Y")
+    if is_395:
+        penalty_demand_period = (
+            f"Взыскать с Ответчика в пользу Истца проценты за пользование чужими "
+            f"денежными средствами в соответствии со ст. 395 ГК РФ за период "
+            f"с {period_start_str} по {claim_date_str} в размере "
+            f"{money_words(ctx['total_penalty'])}."
+        )
+        penalty_demand_future = (
+            f"Взыскать с Ответчика в пользу Истца проценты за пользование чужими "
+            f"денежными средствами в соответствии со ст. 395 ГК РФ, начисляемые на "
+            f"сумму задолженности исходя из ключевой ставки Банка России, "
+            f"действующей в соответствующие периоды, с {next_day_str} по день "
+            f"фактического исполнения обязательства."
+        )
+    else:
+        penalty_demand_period = (
+            f"Взыскать с Ответчика в пользу Истца договорную неустойку за период "
+            f"с {period_start_str} по {claim_date_str} в соответствии с п. 4.7. "
+            f"Договора в размере {money_words(ctx['total_penalty'])}."
+        )
+        penalty_demand_future = (
+            f"Взыскать с Ответчика в пользу Истца договорную неустойку в размере, "
+            f"предусмотренном п. 4.7. Договора, с {next_day_str} по день "
+            f"фактического исполнения Ответчиком решения суда."
+        )
     demands = [
         f"Взыскать с Ответчика сумму задолженности по оплате услуг Истца по "
         f"договору № {contract_full} в размере {money_words(ctx['total_debt'])}.",
 
-        f"Взыскать с Ответчика в пользу Истца договорную неустойку за период "
-        f"с {period_start_str} по {claim_date_str} в соответствии с п. 4.7. "
-        f"Договора в размере {money_words(ctx['total_penalty'])}.",
-
-        f"Взыскать с Ответчика в пользу Истца договорную неустойку в размере, "
-        f"предусмотренном п. 4.7. Договора, с {next_day_str} по день "
-        f"фактического исполнения Ответчиком решения суда.",
+        penalty_demand_period,
+        penalty_demand_future,
 
         f"Взыскать с Ответчика почтовые расходы в размере "
         f"{money_words(ctx['postal_costs'])}.",

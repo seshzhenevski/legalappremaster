@@ -65,6 +65,41 @@ export function initLawsuitTab() {
   document
     .getElementById("lawsuit-claim-date-slot")
     .appendChild(createDateField({ id: "lawsuit-claim-date", compact: true }));
+
+  document
+    .querySelectorAll("#lawsuit-penalty-type-toggle .lawsuit-penalty-type-option")
+    .forEach((button) => {
+      button.addEventListener("click", () => setLawsuitPenaltyType(button.dataset.penaltyType));
+    });
+  setLawsuitPenaltyType("contractual");
+}
+
+// Текущий тип неустойки для иска: "contractual" | "statutory_395".
+let currentLawsuitPenaltyType = "contractual";
+
+/**
+ * Переключает тип неустойки в генераторе иска (договорная / ст. 395 ГК РФ).
+ *
+ * Подсвечивает активную кнопку, показывает или скрывает поля ставки договорной
+ * неустойки и информационный блок про расчёт по ключевой ставке ЦБ.
+ */
+function setLawsuitPenaltyType(type) {
+  currentLawsuitPenaltyType = type;
+
+  document
+    .querySelectorAll("#lawsuit-penalty-type-toggle .lawsuit-penalty-type-option")
+    .forEach((button) => {
+      const active = button.dataset.penaltyType === type;
+      button.classList.toggle("bg-blue-600", active);
+      button.classList.toggle("text-white", active);
+      button.classList.toggle("bg-white", !active);
+      button.classList.toggle("text-slate-600", !active);
+      button.classList.toggle("hover:bg-slate-50", !active);
+    });
+
+  const is395 = type === "statutory_395";
+  document.getElementById("lawsuit-contractual-fields").classList.toggle("hidden", is395);
+  document.getElementById("lawsuit-395-info").classList.toggle("hidden", !is395);
 }
 
 /**
@@ -95,6 +130,7 @@ function clearLawsuitForm() {
   setDateFieldValue("lawsuit-claim-date", "");
   document.getElementById("lawsuit-rate").value = "0.1";
   document.getElementById("lawsuit-docs-signed").checked = true;
+  setLawsuitPenaltyType("contractual");
 }
 
 /**
@@ -318,6 +354,7 @@ function collectLawsuitRequest() {
       "lawsuit-closing-docs-path",
     ).value,
     claim_date: document.getElementById("lawsuit-claim-date").value,
+    penalty_type: currentLawsuitPenaltyType,
     daily_rate_percent: document.getElementById("lawsuit-rate").value || "0.1",
     cap_percent: document.getElementById("lawsuit-cap").value,
     pretenzia_number: document.getElementById("lawsuit-pretenzia-number").value,

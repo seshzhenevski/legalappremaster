@@ -17,9 +17,11 @@ from pathlib import Path
 from typing import List, Optional
 
 from legal_tools.importers.excel import (
-    read_excel, group_invoices, compute_lawsuit, LawsuitInputError,
+    read_excel, group_invoices, compute_lawsuit, compute_lawsuit_395,
+    LawsuitInputError,
 )
 from legal_tools.importers.document_sorter import DocumentSorter
+from logic.key_rate_service import ensure_fresh_history
 from legal_tools.generators.lawsuit_docx import generate_lawsuit_docx, generate_opis_docx
 from legal_tools.generators.payment_pdf import generate_payment_order
 from legal_tools.core.formatting import sanitize_filename, fmt, parse_dec
@@ -90,6 +92,24 @@ def build_lawsuit_context(
     claim_date = parse_iso_date(request["claim_date"])
     invoices, contract_ref, warnings = group_invoices(excel_rows, claim_date)
 
+    if request.get("penalty_type", "contractual") == "statutory_395":
+        history, rate_warnings = ensure_fresh_history(
+            claim_date, allow_network=request.get("check_rate_online", True),
+        )
+        context = compute_lawsuit_395(
+            defendant=request["defendant"],
+            invoices=invoices,
+            contract_ref=contract_ref,
+            claim_date=claim_date,
+            pretenzia_number=request["pretenzia_number"],
+            pretenzia_date=parse_iso_date(request["pretenzia_date"]),
+            postal_costs=parse_required_decimal(request.get("postal_costs"), "0"),
+            history=history,
+            docs_signed=request.get("docs_signed", True),
+        )
+        context["_warnings"] = warnings + rate_warnings + context.pop("_warnings_calc", [])
+        return context
+
     context = compute_lawsuit(
         defendant=request["defendant"],
         invoices=invoices,
@@ -133,17 +153,28 @@ def generate_lawsuit_package(request: dict, report_progress=None) -> dict:
     report_progress(f"Найдено строк: {len(excel_rows)}")
     report_progress("")
 
-    daily_rate_percent = request["daily_rate_percent"]
     claim_date = parse_iso_date(request["claim_date"])
-    report_progress(
-        f"🧮 Расчёт неустойки по {len(excel_rows)} счетам "
-        f"(ставка {daily_rate_percent}% в день, на {claim_date:%d.%m.%Y})...",
-        percent=20,
-    )
+    if request.get("penalty_type", "contractual") == "statutory_395":
+        report_progress(
+            f"🧮 Расчёт процентов по ст. 395 ГК РФ по {len(excel_rows)} счетам "
+            f"(по ключевой ставке ЦБ РФ, на {claim_date:%d.%m.%Y})...",
+            percent=20,
+        )
+    else:
+        daily_rate_percent = request.get("daily_rate_percent", "0.1")
+        report_progress(
+            f"🧮 Расчёт неустойки по {len(excel_rows)} счетам "
+            f"(ставка {daily_rate_percent}% в день, на {claim_date:%d.%m.%Y})...",
+            percent=20,
+        )
     context = build_lawsuit_context(request, excel_rows)
-    report_progress(f"Учтено счетов: {len(context['blocks'])}")
+    report_progress(f"Учтено счетов: {len(context['table_rows'])}")
     report_progress(f"Сумма долга: {fmt(context['total_debt'])} руб.")
-    report_progress(f"Неустойка: {fmt(context['total_penalty'])} руб.")
+    penalty_label = (
+        "Проценты по ст. 395 ГК РФ"
+        if context.get("penalty_type") == "statutory_395" else "Неустойка"
+    )
+    report_progress(f"{penalty_label}: {fmt(context['total_penalty'])} руб.")
     report_progress(f"Цена иска: {fmt(context['claim_amount'])} руб.")
     report_progress(f"Госпошлина: {fmt(context['duty_amount'])} руб.")
     for warning in context.get("_warnings", []):
