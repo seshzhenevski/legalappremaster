@@ -4,6 +4,7 @@
 // Единственная задача — инициализировать навигацию и все вкладки
 // после загрузки страницы. Не содержит бизнес-логики.
 
+import { initTheme } from "./theme.js";
 import { initSidebar } from "./sidebar.js";
 import { initTabNavigation } from "./tab-navigation.js";
 import { initLawsuitTab } from "./tab-lawsuit.js";
@@ -22,6 +23,7 @@ import { initDatePickers } from "./date-picker.js";
  * здесь.
  */
 function initApplication() {
+  initTheme();
   initDatePickers();
   initSidebar();
   initTabNavigation();

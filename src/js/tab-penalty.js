@@ -107,7 +107,7 @@ function setPenaltyType(type) {
   document.querySelectorAll("#penalty-type-toggle .penalty-type-option").forEach((button) => {
     const active = button.dataset.penaltyType === type;
     button.classList.toggle("bg-blue-600", active);
-    button.classList.toggle("text-white", active);
+    button.classList.toggle("text-oncolor", active);
     button.classList.toggle("bg-white", !active);
     button.classList.toggle("text-slate-600", !active);
     button.classList.toggle("hover:bg-slate-50", !active);

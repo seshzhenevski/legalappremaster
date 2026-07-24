@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Legal App</title>
+  <!-- Ранняя установка темы до отрисовки (без вспышки). Блокирующий скрипт из
+       'self' — инлайн запрещён CSP (script-src 'self'). -->
+  <script src="js/theme-boot.js"></script>
   <link rel="stylesheet" href="css/tailwind.css" />
   <style>
     /*
@@ -34,11 +37,11 @@
       background: transparent;
     }
     .thin-scroll::-webkit-scrollbar-thumb {
-      background-color: #d9d9d9;
+      background-color: var(--scroll-thumb);
       border-radius: 9999px;
     }
     .thin-scroll::-webkit-scrollbar-thumb:hover {
-      background-color: #b3b3b3;
+      background-color: var(--scroll-thumb-hover);
     }
 
     /*
@@ -77,8 +80,8 @@
       display: block;
       position: sticky;
       height: 12px;
-      background: #ffffff;
-      border: 1px solid #e6e6e6;
+      background: rgb(var(--c-white));
+      border: 1px solid rgb(var(--c-slate-200));
       z-index: 1;
     }
     .form-scroll > div::before {
@@ -99,26 +102,26 @@
       position: relative;
       height: 6px;
       border-radius: 3px;
-      background: #ececec;
+      background: rgb(var(--c-slate-100));
       overflow: hidden;
     }
     .progress-bar-fill {
       height: 100%;
       width: 0%;
-      background: #0055fe;
+      background: var(--accent);
       border-radius: 3px;
       transition: width 0.25s ease;
     }
 
     /* Зона drag-and-drop для Excel-файлов */
     .drop-zone {
-      border: 1px dashed #d0d0d0;
+      border: 1px dashed rgb(var(--c-slate-300));
       border-radius: 10px;
       transition: border-color 0.15s ease, background-color 0.15s ease;
     }
     .drop-zone.drop-zone-active {
-      border-color: #0055fe;
-      background-color: #f0f5ff;
+      border-color: var(--accent);
+      background-color: rgb(var(--c-blue-50));
     }
 
     /*
@@ -134,8 +137,8 @@
       flex-direction: column;
       flex-shrink: 0;
       width: 64px;
-      background: #f9f9f9;
-      border-right: 1px solid rgba(0, 0, 0, 0.08);
+      background: rgb(var(--c-slate-50));
+      border-right: 1px solid var(--hairline);
       overflow: hidden;
       transition: width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
     }
@@ -156,7 +159,7 @@
       margin: 0 8px;
       padding: 0 12px;
       border-radius: 10px;
-      color: #5d5d5d;
+      color: rgb(var(--c-slate-500));
       cursor: pointer;
       white-space: nowrap;
       text-align: left;
@@ -165,16 +168,16 @@
     .sidebar-toggle {
       margin-top: 8px;
       margin-bottom: 4px;
-      color: #8f8f8f;
+      color: rgb(var(--c-slate-400));
     }
     .sidebar-toggle:hover,
     .sidebar-item:hover {
-      background: rgba(0, 0, 0, 0.05);
-      color: #0d0d0d;
+      background: var(--veil);
+      color: rgb(var(--c-slate-700));
     }
     .sidebar-item.tab-active {
-      background: #f0f5ff;
-      color: #0055fe;
+      background: rgb(var(--c-blue-50));
+      color: var(--accent);
     }
 
     .sidebar-icon,
@@ -225,7 +228,7 @@
       gap: 2px;
       padding-top: 4px;
       margin-top: 4px;
-      border-top: 1px solid rgba(0, 0, 0, 0.06);
+      border-top: 1px solid var(--hairline);
     }
 
     /*
@@ -247,8 +250,8 @@
     */
     .dash-card {
       position: relative;
-      background: #ffffff;
-      border: 1px solid rgba(0, 0, 0, 0.08);
+      background: rgb(var(--c-white));
+      border: 1px solid var(--hairline);
       border-radius: 10px;
       padding: 1.25rem;
     }
@@ -263,18 +266,18 @@
     .dash-card-title {
       font-size: 0.875rem;
       font-weight: 600;
-      color: #0d0d0d;
+      color: rgb(var(--c-slate-700));
       margin-bottom: 0.75rem;
     }
     .dash-section-title {
       font-size: 1rem;
       font-weight: 700;
-      color: #0d0d0d;
+      color: rgb(var(--c-slate-700));
       padding-top: 0.5rem;
     }
     .dash-kpi-label {
       font-size: 0.75rem;
-      color: #5d5d5d;
+      color: rgb(var(--c-slate-500));
     }
     /*
       Плитка — контейнер запроса: кегль значения считается от ширины самой
@@ -294,14 +297,14 @@
       font-size: clamp(0.8rem, 12cqi, 1.75rem);
       font-weight: 700;
       line-height: 1.2;
-      color: #0d0d0d;
+      color: rgb(var(--c-slate-700));
       margin-top: 0.25rem;
       white-space: nowrap;
       /* Цифры не «прыгают» по ширине во время анимации набора значения */
       font-variant-numeric: tabular-nums;
     }
-    .dash-kpi-accent { color: #0055fe; }
-    .dash-kpi-success { color: #16a34a; }
+    .dash-kpi-accent { color: var(--accent); }
+    .dash-kpi-success { color: rgb(var(--c-green-600)); }
 
     /*
       Высота графика фиксируется контейнером: Chart.js с maintainAspectRatio:
@@ -320,15 +323,15 @@
     .dash-table th {
       text-align: left;
       font-weight: 500;
-      color: #5d5d5d;
+      color: rgb(var(--c-slate-500));
       padding: 0.375rem 0.5rem;
-      border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+      border-bottom: 1px solid var(--hairline);
       white-space: nowrap;
     }
     .dash-table td {
       padding: 0.5rem;
-      border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-      color: #0d0d0d;
+      border-bottom: 1px solid var(--veil);
+      color: rgb(var(--c-slate-700));
     }
     .dash-table td.dash-num {
       text-align: right;
@@ -348,8 +351,8 @@
       width: 14px;
       height: 14px;
       border-radius: 9999px;
-      border: 1px solid #d0d0d0;
-      color: #8f8f8f;
+      border: 1px solid rgb(var(--c-slate-300));
+      color: rgb(var(--c-slate-400));
       font-size: 9px;
       font-style: italic;
       font-weight: 700;
@@ -358,8 +361,8 @@
     }
     .dash-info:hover,
     .dash-info:focus-visible {
-      color: #0055fe;
-      border-color: #0055fe;
+      color: var(--accent);
+      border-color: var(--accent);
       outline: none;
     }
     .dash-info-bubble {
@@ -379,8 +382,8 @@
       width: 17rem;
       max-width: 78vw;
       padding: 0.625rem 0.75rem;
-      background: #000000;
-      color: #ffffff;
+      background: rgb(var(--c-slate-700));
+      color: rgb(var(--c-white));
       font-size: 0.75rem;
       font-style: normal;
       font-weight: 400;
@@ -422,16 +425,16 @@
     /* Карточка года — кликабельная плитка, ведёт на экран этого года */
     .dash-year-card {
       text-align: left;
-      background: #f9f9f9;
-      border: 1px solid rgba(0, 0, 0, 0.08);
+      background: rgb(var(--c-slate-50));
+      border: 1px solid var(--hairline);
       border-radius: 10px;
       padding: 0.875rem 1rem;
       transition: border-color 0.15s ease, background-color 0.15s ease,
                   transform 0.15s ease;
     }
     .dash-year-card:hover {
-      border-color: #0055fe;
-      background: #f0f5ff;
+      border-color: var(--accent);
+      background: rgb(var(--c-blue-50));
       transform: translateY(-1px);
     }
 
@@ -450,7 +453,7 @@
 
     /* Скелетоны на время загрузки — вместо пустого экрана */
     .dash-skeleton {
-      background: linear-gradient(90deg, #f2f2f2 25%, #e9e9e9 37%, #f2f2f2 63%);
+      background: linear-gradient(90deg, rgb(var(--c-slate-100)) 25%, rgb(var(--c-slate-200)) 37%, rgb(var(--c-slate-100)) 63%);
       background-size: 400% 100%;
       animation: dash-shimmer 1.2s ease-in-out infinite;
       border-radius: 10px;
@@ -488,7 +491,7 @@
       html, body {
         height: auto !important;
         overflow: visible !important;
-        background: #ffffff !important;
+        background: rgb(var(--c-white)) !important;
       }
 
       /* Всё, что не относится к отчёту: шапка приложения, сайдбар, управление */
@@ -651,6 +654,24 @@
           <span class="sidebar-label">Дашборд</span>
         </button>
       </nav>
+
+      <!-- Переключатель темы: закреплён внизу сайдбара. Один контрол, две
+           презентации (иконка в свёрнутом виде, тумблер — в развёрнутом);
+           состояние синхронизировано, см. theme.js -->
+      <div class="sidebar-footer">
+        <button id="theme-toggle" type="button" class="theme-toggle"
+          role="switch" aria-checked="false" aria-label="Тёмная тема" title="Тёмная тема">
+          <span class="theme-compact-icon">
+            <svg class="theme-icon-sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>
+            <svg class="theme-icon-moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg>
+          </span>
+          <span class="theme-expanded" aria-hidden="true">
+            <span class="theme-expanded-label theme-label-dark">Тёмная</span>
+            <span class="theme-track"><span class="theme-thumb"></span></span>
+            <span class="theme-expanded-label theme-label-light">Светлая</span>
+          </span>
+        </button>
+      </div>
     </aside>
 
     <main class="flex-1 min-h-0 min-w-0 p-5">
@@ -810,7 +831,7 @@
             <div class="border-t border-slate-100 pt-3 space-y-2">
               <button id="lawsuit-generate-button"
                 class="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700
-                       text-white text-sm font-medium py-2.5 px-4 rounded-lg">
+                       text-oncolor text-sm font-medium py-2.5 px-4 rounded-lg">
                 <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" /> <path d="M14 2v5a1 1 0 0 0 1 1h5" /> <path d="M10 9H8" /> <path d="M16 13H8" /> <path d="M16 17H8" /></svg> Сформировать иск
               </button>
               <button id="lawsuit-clear-button"
@@ -942,7 +963,7 @@
             <div class="border-t border-slate-100 pt-3 space-y-2">
               <button id="claim-generate-button"
                 class="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700
-                       text-white text-sm font-medium py-2.5 px-4 rounded-lg">
+                       text-oncolor text-sm font-medium py-2.5 px-4 rounded-lg">
                 <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z" /></svg> Сгенерировать
               </button>
               <button id="claim-clear-button"
@@ -971,14 +992,14 @@
           </button>
           <div class="shrink-0 flex gap-2">
             <button id="claim-download-docx-button" disabled
-              class="flex-1 flex items-center justify-center gap-2 bg-slate-700 hover:bg-black
-                     text-white text-sm font-medium py-2.5 px-4 rounded-lg
+              class="flex-1 flex items-center justify-center gap-2 bg-graphite hover:bg-black
+                     text-oncolor text-sm font-medium py-2.5 px-4 rounded-lg
                      disabled:opacity-40 disabled:cursor-not-allowed">
               <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3" /> <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /> <path d="m7 10 5 5 5-5" /></svg> Скачать DOCX
             </button>
             <button id="claim-download-pdf-button" disabled
               class="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700
-                     text-white text-sm font-medium py-2.5 px-4 rounded-lg
+                     text-oncolor text-sm font-medium py-2.5 px-4 rounded-lg
                      disabled:opacity-40 disabled:cursor-not-allowed">
               <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3" /> <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /> <path d="m7 10 5 5 5-5" /></svg> Скачать PDF
             </button>
@@ -1052,7 +1073,7 @@
             <div class="border-t border-slate-100 pt-3 space-y-2">
               <button id="sorter-run-button"
                 class="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700
-                       text-white text-sm font-medium py-2.5 px-4 rounded-lg">
+                       text-oncolor text-sm font-medium py-2.5 px-4 rounded-lg">
                 <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z" /></svg> Начать обработку
               </button>
               <div class="flex gap-2">
@@ -1208,7 +1229,7 @@
             <div class="border-t border-slate-100 pt-3 space-y-2">
               <button id="penalty-calculate-button"
                 class="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700
-                       text-white text-sm font-medium py-2.5 px-4 rounded-lg">
+                       text-oncolor text-sm font-medium py-2.5 px-4 rounded-lg">
                 <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="16" height="20" x="4" y="2" rx="2" /> <line x1="8" x2="16" y1="6" y2="6" /> <line x1="16" x2="16" y1="14" y2="18" /> <path d="M16 10h.01" /> <path d="M12 10h.01" /> <path d="M8 10h.01" /> <path d="M12 14h.01" /> <path d="M8 14h.01" /> <path d="M12 18h.01" /> <path d="M8 18h.01" /></svg> Рассчитать
               </button>
               <button id="penalty-clear-button"
@@ -1225,7 +1246,7 @@
           <div class="shrink-0 flex items-center justify-between">
             <div class="flex items-center gap-2 font-medium text-slate-700"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18" /> <rect width="18" height="18" x="3" y="3" rx="2" /> <path d="M3 9h18" /> <path d="M3 15h18" /></svg> Результат расчёта</div>
             <button id="penalty-copy-table-button"
-              class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm whitespace-nowrap">
+              class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-oncolor rounded-lg text-sm whitespace-nowrap">
               <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /> <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></svg> Копировать таблицу
             </button>
           </div>
@@ -1314,12 +1335,12 @@
             <div class="flex gap-2">
               <button id="duty-calculate-button"
                 class="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700
-                       text-white text-sm font-medium py-2.5 px-4 rounded-lg">
+                       text-oncolor text-sm font-medium py-2.5 px-4 rounded-lg">
                 <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="16" height="20" x="4" y="2" rx="2" /> <line x1="8" x2="16" y1="6" y2="6" /> <line x1="16" x2="16" y1="14" y2="18" /> <path d="M16 10h.01" /> <path d="M12 10h.01" /> <path d="M8 10h.01" /> <path d="M12 14h.01" /> <path d="M8 14h.01" /> <path d="M12 18h.01" /> <path d="M8 18h.01" /></svg> Рассчитать
               </button>
               <button id="duty-generate-pdf-button"
-                class="flex-1 flex items-center justify-center gap-2 bg-slate-700 hover:bg-black
-                       text-white text-sm font-medium py-2.5 px-4 rounded-lg">
+                class="flex-1 flex items-center justify-center gap-2 bg-graphite hover:bg-black
+                       text-oncolor text-sm font-medium py-2.5 px-4 rounded-lg">
                 <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" /> <path d="M14 2v5a1 1 0 0 0 1 1h5" /> <path d="M12 18v-6" /> <path d="m9 15 3 3 3-3" /></svg> Сформировать PDF
               </button>
             </div>
@@ -1356,12 +1377,12 @@
           </select>
           <button id="dashboard-refresh-button"
             class="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700
-                   text-white text-sm font-medium py-2 px-4 rounded-lg">
+                   text-oncolor text-sm font-medium py-2 px-4 rounded-lg">
             <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /> <path d="M21 3v5h-5" /> <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /> <path d="M8 16H3v5" /></svg> Обновить
           </button>
           <button id="dashboard-pdf-button"
-            class="flex items-center justify-center gap-2 bg-slate-700 hover:bg-black
-                   text-white text-sm font-medium py-2 px-4 rounded-lg">
+            class="flex items-center justify-center gap-2 bg-graphite hover:bg-black
+                   text-oncolor text-sm font-medium py-2 px-4 rounded-lg">
             <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" /> <path d="M14 2v5a1 1 0 0 0 1 1h5" /> <path d="M12 18v-6" /> <path d="m9 15 3 3 3-3" /></svg> Выгрузить в PDF
           </button>
           <button id="dashboard-settings-button"
@@ -1408,7 +1429,7 @@
             </div>
           </div>
           <button id="dashboard-settings-save-button"
-            class="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2.5 px-4 rounded-lg">
+            class="w-full bg-blue-600 hover:bg-blue-700 text-oncolor text-sm font-medium py-2.5 px-4 rounded-lg">
             Сохранить и загрузить данные
           </button>
         </div>
@@ -1680,7 +1701,7 @@
       <div id="result-modal-title" class="text-lg font-semibold text-slate-800"></div>
       <div id="result-modal-message" class="text-sm text-slate-500 whitespace-pre-line"></div>
       <button id="result-modal-close-button"
-        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg">
+        class="w-full bg-blue-600 hover:bg-blue-700 text-oncolor font-medium py-2.5 rounded-lg">
         Понятно
       </button>
     </div>
@@ -1704,7 +1725,7 @@
       <div id="dadata-key-error" class="text-xs text-red-600"></div>
       <div class="flex gap-2">
         <button id="dadata-key-save-button"
-          class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg text-sm">
+          class="flex-1 bg-blue-600 hover:bg-blue-700 text-oncolor font-medium py-2 rounded-lg text-sm">
           Сохранить и найти
         </button>
         <button id="dadata-key-cancel-button"

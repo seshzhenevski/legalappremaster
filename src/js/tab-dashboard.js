@@ -93,6 +93,14 @@ export function initDashboardTab() {
     .querySelector('[data-tab-target="panel-dashboard"]')
     .addEventListener("click", () => loadDashboard({ force: false }));
 
+  // При смене темы графики перерисовываются в новой палитре: CSS-переменные
+  // на canvas не действуют, поэтому нужен явный повтор отрисовки.
+  document.addEventListener("themechange", () => {
+    if (dashboardData) {
+      render();
+    }
+  });
+
   // Перед печатью canvas графиков нужно пересчитать под ширину печатной
   // страницы: свой пиксельный размер он взял от окна приложения (оно шире A4),
   // и без пересчёта графики в PDF уезжают вправо и обрезаются. После печати —
@@ -209,6 +217,7 @@ function emptySection() {
  * карточки годов), на экране года скрываются.
  */
 function render() {
+  themeChartDefaults();
   const section = currentCasesSection();
   const isOverview = selectedYear === null;
 
@@ -504,8 +513,8 @@ function renderDynamics(dynamics) {
           isMoney: false,
           data: byYearAscending.map((year) => year.cases_count),
           type: "line",
-          borderColor: "#0d0d0d",
-          backgroundColor: "#0d0d0d",
+          borderColor: inkColor,
+          backgroundColor: inkColor,
           tension: 0.3,
           yAxisID: "yCount",
           // Меньший order — кривую рисует последней, поверх столбцов.
@@ -941,8 +950,8 @@ function renderClaimsDynamics(dynamics) {
           isMoney: false,
           data: byYearAscending.map((year) => year.claims_count),
           type: "line",
-          borderColor: "#0d0d0d",
-          backgroundColor: "#0d0d0d",
+          borderColor: inkColor,
+          backgroundColor: inkColor,
           tension: 0.3,
           yAxisID: "yCount",
           order: 1,
@@ -1039,6 +1048,45 @@ function renderWarnings(warnings) {
  * Принимает флаги: показывать ли легенду и форматировать ли подсказку как
  * деньги. Анимация короткая и не повторяется при наведении.
  */
+// Цвет «чернил» текущей темы для серий, завязанных на фон (тёмная линия
+// динамики на светлом фоне превратилась бы в невидимую на тёмном). Обновляется
+// в themeChartDefaults() перед каждой отрисовкой.
+let inkColor = "#0d0d0d";
+
+/**
+ * Применяет цвета текущей темы к глобальным настройкам Chart.js.
+ *
+ * CSS-переменные не действуют на canvas (ТЗ, раздел «Графики»), поэтому подписи
+ * осей и легенды, линии сетки и всплывающие подсказки берут цвета из
+ * CSS-токенов темы и записываются в Chart.defaults перед отрисовкой. Вызывается
+ * в начале render() и при событии смены темы.
+ */
+function themeChartDefaults() {
+  if (!window.Chart) {
+    return;
+  }
+  const styles = getComputedStyle(document.documentElement);
+  const read = (name, fallback) => styles.getPropertyValue(name).trim() || fallback;
+
+  const tick = read("--chart-tick", "#5d5d5d");
+  const grid = read("--chart-grid", "rgba(0,0,0,0.08)");
+  const tooltipBg = read("--chart-tooltip-bg", "#0d0d0d");
+  const tooltipText = read("--chart-tooltip-text", "#ffffff");
+  inkColor = read("--ink", "#0d0d0d");
+
+  const defaults = window.Chart.defaults;
+  defaults.color = tick;
+  defaults.borderColor = grid;
+  if (defaults.scale && defaults.scale.grid) {
+    defaults.scale.grid.color = grid;
+  }
+  if (defaults.plugins && defaults.plugins.tooltip) {
+    defaults.plugins.tooltip.backgroundColor = tooltipBg;
+    defaults.plugins.tooltip.titleColor = tooltipText;
+    defaults.plugins.tooltip.bodyColor = tooltipText;
+  }
+}
+
 function baseChartOptions({ moneyTooltip = false, legend = false } = {}) {
   return {
     responsive: true,
@@ -1133,12 +1181,26 @@ async function exportDashboardToPdf() {
     return;
   }
 
+  // ТЗ п.7: PDF всегда формируется в светлой теме. На время печати временно
+  // снимаем класс dark (CSS-токены и графики становятся светлыми), затем
+  // возвращаем выбранную пользователем тему.
+  const root = document.documentElement;
+  const wasDark = root.classList.contains("dark");
+
   printMode = true;
+  if (wasDark) {
+    root.classList.remove("dark");
+  }
   render();
   await waitForFrames(2);
 
   window.print();
+
   printMode = false;
+  if (wasDark) {
+    root.classList.add("dark");
+    render();
+  }
 }
 
 /**

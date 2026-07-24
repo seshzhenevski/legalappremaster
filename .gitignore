@@ -54,6 +54,10 @@ src-tauri/icons/StoreLogo.png
 council-*.md
 council-*.html
 
+# Референс-компонент dark-mode-toggle (сторонний, для образца UI переключателя
+# темы) — в репозиторий приложения не входит.
+dark-mode-toggle-master/
+
 # ОС/редактор
 .DS_Store
 Thumbs.db

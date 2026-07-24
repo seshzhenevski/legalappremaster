@@ -244,7 +244,7 @@ function ensurePopup() {
         Сегодня
       </button>
       <button type="button" class="date-picker-done px-3 py-1 bg-blue-600 hover:bg-blue-700
-                                    text-white text-xs rounded-lg">
+                                    text-oncolor text-xs rounded-lg">
         Готово
       </button>
     </div>
@@ -337,7 +337,7 @@ function renderCalendar() {
 
     let buttonClass = "w-8 h-8 rounded-full text-sm hover:bg-slate-100";
     if (isSelected) {
-      buttonClass = "w-8 h-8 rounded-full text-sm bg-blue-600 text-white hover:bg-blue-700";
+      buttonClass = "w-8 h-8 rounded-full text-sm bg-blue-600 text-oncolor hover:bg-blue-700";
     } else if (isToday) {
       buttonClass = "w-8 h-8 rounded-full text-sm border-2 border-blue-600 text-blue-600 hover:bg-blue-50";
     }
