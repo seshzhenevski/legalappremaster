@@ -47,7 +47,7 @@ def build_sidecar_executable() -> Path:
     Собирает main.py в один исполняемый файл через PyInstaller.
 
     Возвращает путь к собранному файлу в папке dist. Все зависимости
-    (docx, reportlab, Pillow, openpyxl, pypdf, num2words, google-auth)
+    (docx, reportlab, Pillow, openpyxl, pypdf, num2words, google-auth, certifi)
     вшиваются внутрь. Флаг --paths указывает PyInstaller, где искать пакеты
     rpc, logic и legal_tools; --collect-submodules гарантирует, что все
     подмодули переиспользуемого ядра попадут в сборку.
@@ -70,6 +70,10 @@ def build_sidecar_executable() -> Path:
             # импорта внутри библиотеки — поэтому собираем весь пакет целиком.
             "--collect-all", "google.auth",
             "--collect-all", "google.oauth2",
+            # Корневые сертификаты для HTTPS-запросов к DaData и ЦБ: в системном
+            # хранилище Windows части публичных корней может не быть, поэтому
+            # список certifi должен лежать внутри бинарника.
+            "--collect-data", "certifi",
             "--distpath", str(PROJECT_ROOT / "dist-sidecar"),
             "--workpath", str(PROJECT_ROOT / "build-sidecar"),
             "--specpath", str(PROJECT_ROOT / "build-sidecar"),

@@ -26,6 +26,7 @@ from legal_tools.core.key_rate import (
     RateHistory, parse_history, history_to_raw, latest_start,
 )
 from legal_tools.core.key_rate_seed import KEY_RATE_SEED
+from legal_tools.core.network import shared_ssl_context
 
 CBR_ENDPOINT = "https://www.cbr.ru/DailyInfoWebServ/DailyInfo.asmx"
 HISTORY_FILENAME = "key_rate_history.json"
@@ -135,7 +136,9 @@ def fetch_cbr_key_rate(from_date: date, to_date: date) -> RateHistory:
         data=_build_keyrate_soap(from_date, to_date),
         headers={"Content-Type": "application/soap+xml; charset=utf-8"},
     )
-    with urllib.request.urlopen(request, timeout=NETWORK_TIMEOUT_SECONDS) as response:
+    with urllib.request.urlopen(
+        request, timeout=NETWORK_TIMEOUT_SECONDS, context=shared_ssl_context(),
+    ) as response:
         payload = response.read().decode("utf-8")
 
     root = ET.fromstring(payload)

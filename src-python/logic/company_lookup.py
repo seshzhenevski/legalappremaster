@@ -108,6 +108,8 @@ def find_company_by_inn(inn: str, api_key: str) -> dict | None:
     import re
     import urllib.request
 
+    from legal_tools.core.network import shared_ssl_context
+
     cleaned_inn = re.sub(r"\D", "", inn)
     if not cleaned_inn:
         return None
@@ -125,7 +127,9 @@ def find_company_by_inn(inn: str, api_key: str) -> dict | None:
         },
     )
 
-    with urllib.request.urlopen(request, timeout=10) as response:
+    with urllib.request.urlopen(
+        request, timeout=10, context=shared_ssl_context(),
+    ) as response:
         response_data = json.loads(response.read().decode("utf-8"))
 
     suggestions = response_data.get("suggestions", [])
