@@ -17,22 +17,29 @@ from pathlib import Path
 from logic.knowledge_base import (
     DEFAULT_ARTICLE_STATUS,
     LOCK_STALE_AFTER,
+    MAX_FILENAME_LENGTH,
     MAX_VERSIONS_PER_ARTICLE,
     acquire_lock,
     check_lock,
     content_fingerprint,
+    create_article,
+    create_folder,
     delete_article,
+    delete_folder,
     generate_article_id,
     list_trash,
     list_tree,
     list_versions,
     lock_file_path,
+    move_article,
     parse_article,
     purge_trash_entry,
     read_article,
     read_version,
     relative_path_string,
     release_lock,
+    rename_article,
+    rename_folder,
     restore_article,
     safe_child_path,
     save_article,
@@ -296,6 +303,305 @@ class TreeTests(unittest.TestCase):
             tree = list_tree(Path(empty_directory))
             self.assertEqual(tree["folders"], [])
             self.assertEqual(tree["articles"], [])
+
+
+class CreateArticleTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary_directory.name)
+
+    def tearDown(self):
+        self.temporary_directory.cleanup()
+
+    def test_article_appears_in_requested_folder(self):
+        summary = create_article(self.root, "Договорная работа", "Инструкция")
+        self.assertEqual(
+            summary["relative_path"], "Договорная работа/Инструкция.md",
+        )
+        self.assertTrue((self.root / "Договорная работа" / "Инструкция.md").exists())
+
+    def test_new_article_gets_permanent_id(self):
+        summary = create_article(self.root, "", "Инструкция")
+        self.assertTrue(summary["id"].startswith("kb-"))
+
+    def test_new_article_is_a_draft(self):
+        # Статья ещё не проверена и не должна выглядеть действующей.
+        summary = create_article(self.root, "", "Инструкция")
+        self.assertEqual(summary["status"], DEFAULT_ARTICLE_STATUS)
+
+    def test_author_and_category_are_stored(self):
+        create_article(self.root, "", "Инструкция", author="Иванов И.И.",
+                       category="Персональные данные")
+        loaded = read_article(self.root / "Инструкция.md")
+        self.assertEqual(loaded["properties"]["author"], "Иванов И.И.")
+        self.assertEqual(loaded["properties"]["category"], "Персональные данные")
+
+    def test_forbidden_characters_are_removed_from_filename(self):
+        summary = create_article(self.root, "", 'Запрос: что делать? "срочно"')
+        self.assertNotIn(":", summary["relative_path"])
+        self.assertNotIn("?", summary["relative_path"])
+
+    def test_title_keeps_colon_even_when_filename_cannot(self):
+        summary = create_article(self.root, "", "Запрос: что делать")
+        self.assertEqual(summary["title"], "Запрос: что делать")
+
+    def test_same_title_does_not_overwrite_existing_article(self):
+        first = create_article(self.root, "", "Инструкция")
+        second = create_article(self.root, "", "Инструкция")
+
+        self.assertNotEqual(first["relative_path"], second["relative_path"])
+        self.assertNotEqual(first["id"], second["id"])
+        self.assertEqual(len(list(self.root.glob("*.md"))), 2)
+
+    def test_long_title_is_truncated_in_filename(self):
+        summary = create_article(self.root, "", "Очень длинный заголовок " * 20)
+        file_name = Path(summary["relative_path"]).name
+        self.assertLessEqual(len(file_name), MAX_FILENAME_LENGTH + len(".md"))
+
+    def test_folder_outside_root_is_rejected(self):
+        with self.assertRaises(ValueError):
+            create_article(self.root, "../../чужая папка", "Инструкция")
+
+    def test_absolute_folder_is_rejected(self):
+        with self.assertRaises(ValueError):
+            create_article(self.root, "C:/Windows", "Инструкция")
+
+
+class RenameAndMoveTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary_directory.name)
+        self.summary = create_article(
+            self.root, "Договорная работа", "Инструкция по запросам",
+        )
+        self.article_id = self.summary["id"]
+
+    def tearDown(self):
+        self.temporary_directory.cleanup()
+
+    def test_rename_changes_title_and_filename(self):
+        renamed = rename_article(
+            self.root, self.summary["relative_path"], "Порядок ответа на запрос",
+        )
+        self.assertEqual(renamed["title"], "Порядок ответа на запрос")
+        self.assertEqual(
+            renamed["relative_path"],
+            "Договорная работа/Порядок ответа на запрос.md",
+        )
+
+    def test_rename_keeps_permanent_id(self):
+        # Ссылки других статей держатся на идентификаторе.
+        renamed = rename_article(
+            self.root, self.summary["relative_path"], "Новый заголовок",
+        )
+        self.assertEqual(renamed["id"], self.article_id)
+
+    def test_rename_keeps_body(self):
+        path = self.root / self.summary["relative_path"]
+        loaded = read_article(path)
+        save_article(self.root, path, loaded["properties"], "Важный текст")
+
+        renamed = rename_article(
+            self.root, self.summary["relative_path"], "Новый заголовок",
+        )
+        self.assertEqual(
+            read_article(self.root / renamed["relative_path"])["body"], "Важный текст",
+        )
+
+    def test_rename_removes_old_file(self):
+        rename_article(self.root, self.summary["relative_path"], "Новый заголовок")
+        self.assertFalse((self.root / self.summary["relative_path"]).exists())
+
+    def test_rename_detects_foreign_change(self):
+        loaded = read_article(self.root / self.summary["relative_path"])
+        save_article(
+            self.root,
+            self.root / self.summary["relative_path"],
+            loaded["properties"],
+            "Версия коллеги",
+        )
+
+        result = rename_article(
+            self.root,
+            self.summary["relative_path"],
+            "Новый заголовок",
+            expected_fingerprint=loaded["fingerprint"],
+        )
+        self.assertTrue(result["conflict"])
+
+    def test_rename_conflict_leaves_file_in_place(self):
+        loaded = read_article(self.root / self.summary["relative_path"])
+        save_article(
+            self.root,
+            self.root / self.summary["relative_path"],
+            loaded["properties"],
+            "Версия коллеги",
+        )
+        rename_article(
+            self.root,
+            self.summary["relative_path"],
+            "Новый заголовок",
+            expected_fingerprint=loaded["fingerprint"],
+        )
+        self.assertTrue((self.root / self.summary["relative_path"]).exists())
+
+    def test_move_puts_article_in_target_folder(self):
+        moved = move_article(
+            self.root, self.summary["relative_path"], "Персональные данные",
+        )
+        self.assertEqual(
+            moved["relative_path"], "Персональные данные/Инструкция по запросам.md",
+        )
+
+    def test_move_keeps_permanent_id(self):
+        moved = move_article(self.root, self.summary["relative_path"], "Другой раздел")
+        self.assertEqual(moved["id"], self.article_id)
+
+    def test_move_does_not_touch_content(self):
+        path = self.root / self.summary["relative_path"]
+        loaded = read_article(path)
+        save_article(self.root, path, loaded["properties"], "Важный текст")
+        before = read_article(path)["fingerprint"]
+
+        moved = move_article(self.root, self.summary["relative_path"], "Другой раздел")
+        self.assertEqual(read_article(self.root / moved["relative_path"])["fingerprint"],
+                         before)
+
+    def test_move_into_same_folder_is_harmless(self):
+        moved = move_article(
+            self.root, self.summary["relative_path"], "Договорная работа",
+        )
+        self.assertEqual(moved["relative_path"], self.summary["relative_path"])
+
+    def test_move_does_not_overwrite_article_with_same_name(self):
+        create_article(self.root, "Другой раздел", "Инструкция по запросам")
+        moved = move_article(self.root, self.summary["relative_path"], "Другой раздел")
+
+        self.assertEqual(len(list((self.root / "Другой раздел").glob("*.md"))), 2)
+        self.assertNotEqual(
+            moved["relative_path"], "Другой раздел/Инструкция по запросам.md",
+        )
+
+    def test_move_outside_root_is_rejected(self):
+        with self.assertRaises(ValueError):
+            move_article(self.root, self.summary["relative_path"], "../../чужая папка")
+
+
+class FolderTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary_directory.name)
+
+    def tearDown(self):
+        self.temporary_directory.cleanup()
+
+    def test_folder_is_created(self):
+        result = create_folder(self.root, "", "Договорная работа")
+        self.assertTrue(result["created"])
+        self.assertTrue((self.root / "Договорная работа").is_dir())
+
+    def test_nested_folder_is_created(self):
+        create_folder(self.root, "", "Договорная работа")
+        result = create_folder(self.root, "Договорная работа", "Персональные данные")
+        self.assertEqual(
+            result["relative_path"], "Договорная работа/Персональные данные",
+        )
+
+    def test_existing_folder_is_reported_not_created(self):
+        create_folder(self.root, "", "Раздел")
+        self.assertFalse(create_folder(self.root, "", "Раздел")["created"])
+
+    def test_service_name_is_rejected(self):
+        # Иначе пользователь создал бы папку, невидимую в собственном дереве.
+        for service_name in (".assets", ".versions", ".locks", ".trash"):
+            with self.assertRaises(ValueError):
+                create_folder(self.root, "", service_name)
+
+    def test_empty_name_is_rejected(self):
+        with self.assertRaises(ValueError):
+            create_folder(self.root, "", "   ")
+
+    def test_folder_is_renamed(self):
+        create_folder(self.root, "", "Старое имя")
+        result = rename_folder(self.root, "Старое имя", "Новое имя")
+
+        self.assertEqual(result["relative_path"], "Новое имя")
+        self.assertTrue((self.root / "Новое имя").is_dir())
+
+    def test_rename_keeps_articles_inside(self):
+        create_article(self.root, "Старое имя", "Инструкция")
+        rename_folder(self.root, "Старое имя", "Новое имя")
+        self.assertTrue((self.root / "Новое имя" / "Инструкция.md").exists())
+
+    def test_rename_onto_existing_folder_is_rejected(self):
+        create_folder(self.root, "", "Первый")
+        create_folder(self.root, "", "Второй")
+        with self.assertRaises(ValueError):
+            rename_folder(self.root, "Первый", "Второй")
+
+    def test_root_cannot_be_renamed(self):
+        with self.assertRaises(ValueError):
+            rename_folder(self.root, "", "Другое имя")
+
+    def test_empty_folder_is_deleted(self):
+        create_folder(self.root, "", "Пустой раздел")
+        self.assertTrue(delete_folder(self.root, "Пустой раздел")["deleted"])
+        self.assertFalse((self.root / "Пустой раздел").exists())
+
+    def test_folder_with_articles_is_not_deleted(self):
+        create_article(self.root, "Раздел", "Инструкция")
+        result = delete_folder(self.root, "Раздел")
+
+        self.assertFalse(result["deleted"])
+        self.assertEqual(result["article_count"], 1)
+        self.assertTrue((self.root / "Раздел" / "Инструкция.md").exists())
+
+    def test_nested_articles_also_block_deletion(self):
+        create_article(self.root, "Раздел/Подраздел", "Инструкция")
+        self.assertFalse(delete_folder(self.root, "Раздел")["deleted"])
+
+    def test_root_cannot_be_deleted(self):
+        with self.assertRaises(ValueError):
+            delete_folder(self.root, "")
+
+    def test_folder_outside_root_is_rejected(self):
+        with self.assertRaises(ValueError):
+            delete_folder(self.root, "../../чужая папка")
+
+
+class RootSpellingTests(unittest.TestCase):
+    """
+    Корень базы может быть записан по-разному.
+
+    Windows отдаёт один и тот же каталог коротким именем, длинным, через
+    подключённую букву диска или UNC-путём. Путь статьи обязан вычисляться
+    относительно корня при любом написании, иначе относительные пути молча
+    выходят пустыми.
+    """
+
+    def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary_directory.name)
+        (self.root / "Раздел").mkdir()
+
+    def tearDown(self):
+        self.temporary_directory.cleanup()
+
+    def test_tree_paths_survive_alias_root(self):
+        create_article(self.root, "Раздел", "Инструкция")
+        alias_root = self.root / "Раздел" / ".."
+
+        tree = list_tree(alias_root)
+        article = tree["folders"][0]["articles"][0]
+        self.assertEqual(article["relative_path"], "Раздел/Инструкция.md")
+
+    def test_create_through_alias_root_gives_relative_path(self):
+        alias_root = self.root / "Раздел" / ".."
+        summary = create_article(alias_root, "Раздел", "Инструкция")
+        self.assertEqual(summary["relative_path"], "Раздел/Инструкция.md")
+
+    def test_relative_path_is_empty_outside_root(self):
+        self.assertEqual(relative_path_string(Path("C:/другое"), self.root), "")
 
 
 class LockTests(unittest.TestCase):

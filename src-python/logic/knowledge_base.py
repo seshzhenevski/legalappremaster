@@ -26,6 +26,8 @@ from typing import Any, Dict, List
 
 import yaml
 
+from legal_tools.core.formatting import sanitize_filename
+
 
 # Служебные папки базы. Не показываются в дереве и не индексируются.
 ASSETS_DIRNAME = ".assets"
@@ -57,6 +59,11 @@ LOCK_STALE_AFTER = timedelta(hours=2)
 
 # Сколько снимков предыдущих версий хранить у каждой статьи.
 MAX_VERSIONS_PER_ARTICLE = 10
+
+# Ограничение длины имени файла. Полный путь на сетевом диске складывается
+# из вложенных разделов, а Windows по умолчанию не пускает дальше 260 знаков,
+# поэтому длинный заголовок статьи в имени файла обрезается.
+MAX_FILENAME_LENGTH = 80
 
 
 def generate_article_id() -> str:
@@ -275,10 +282,15 @@ def relative_path_string(target_path: Path, root_path: Path) -> str:
     Наружу уходят только относительные пути: у коллег сетевая папка
     подключена под другой буквой диска, и абсолютный путь вида «Z:\\...»
     у них не откроется.
+
+    Обе стороны приводятся к каноническому виду перед сравнением. Один и тот
+    же каталог Windows отдаёт по-разному — коротким именем «C:\\KORZHE~1\\...»,
+    длинным, через подключённую букву диска или UNC-путём, — и без приведения
+    путь статьи просто не вычислялся бы относительно корня.
     """
     try:
-        relative = target_path.relative_to(root_path)
-    except ValueError:
+        relative = target_path.resolve().relative_to(root_path.resolve())
+    except (ValueError, OSError):
         return ""
     return relative.as_posix()
 
@@ -348,7 +360,254 @@ def list_tree(root_path: Path) -> Dict[str, Any]:
     пропускаются. Вложенность произвольной глубины берётся из файловой
     системы и отдельной реализации не требует.
     """
-    return build_folder_node(root_path, root_path)
+    canonical_root = root_path.resolve()
+    return build_folder_node(canonical_root, canonical_root)
+
+
+# ── Создание, переименование и перенос ───────────────────────────────────────
+# Имена файлов остаются русскими: сетевую папку сотрудники открывают и
+# проводником напрямую, и «Инструкция по запросам.md» читается там лучше,
+# чем транслитерация. Ссылки между статьями от имени файла не зависят —
+# они держатся на постоянном идентификаторе, поэтому переименование и
+# перенос их не ломают.
+
+
+def resolve_inside_root(root_path: Path, relative_path: str) -> Path:
+    """
+    Превращает пришедший снаружи относительный путь в абсолютный.
+
+    Принимает корень базы и относительный путь от фронтенда. Путь, уводящий
+    за пределы корня («../../Windows» или абсолютный «C:\\...»), отклоняется:
+    операции базы знаний не должны доставать файлы вне своей папки.
+    """
+    root_resolved = root_path.resolve()
+    candidate = (root_path / (relative_path or "")).resolve()
+    if candidate != root_resolved and root_resolved not in candidate.parents:
+        raise ValueError(f"Путь вне базы знаний: {relative_path}")
+    return candidate
+
+
+def article_filename(title: str) -> str:
+    """
+    Собирает имя файла статьи из её заголовка.
+
+    Принимает заголовок. Убирает запрещённые в именах файлов символы
+    (переиспользуется общий sanitize_filename проекта) и обрезает результат,
+    чтобы не упереться в ограничение длины пути.
+    """
+    cleaned = sanitize_filename(title, "Без названия")[:MAX_FILENAME_LENGTH].strip()
+    return f"{cleaned or 'Без названия'}{ARTICLE_SUFFIX}"
+
+
+def unique_path(folder_path: Path, file_name: str) -> Path:
+    """
+    Подбирает свободное имя в папке, не затирая существующий файл.
+
+    Принимает папку и желаемое имя. Если имя занято, приписывает к нему
+    номер. Две статьи с одинаковым заголовком — обычное дело, и вторая не
+    должна молча стирать первую.
+    """
+    candidate = folder_path / file_name
+    if not candidate.exists():
+        return candidate
+
+    stem = Path(file_name).stem
+    for number in range(2, 1000):
+        candidate = folder_path / f"{stem} ({number}){ARTICLE_SUFFIX}"
+        if not candidate.exists():
+            return candidate
+    raise ValueError(f"Не удалось подобрать свободное имя для «{file_name}»")
+
+
+def create_article(
+    root_path: Path,
+    folder_relative_path: str,
+    title: str,
+    author: str = "",
+    category: str = "",
+    icon: str = "",
+) -> Dict[str, Any]:
+    """
+    Создаёт пустую статью в указанном разделе.
+
+    Принимает корень базы, относительный путь раздела, заголовок и
+    необязательные автора, категорию и значок. Возвращает карточку созданной
+    статьи. Новая статья заводится со статусом «черновик»: она ещё не
+    проверена и не должна выглядеть в дереве как действующая инструкция.
+    """
+    folder_path = resolve_inside_root(root_path, folder_relative_path)
+    folder_path.mkdir(parents=True, exist_ok=True)
+
+    now = datetime.now().isoformat(timespec="seconds")
+    properties = {
+        "id": generate_article_id(),
+        "title": title.strip() or "Без названия",
+        "category": category,
+        "status": DEFAULT_ARTICLE_STATUS,
+        "icon": icon,
+        "author": author,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    article_path = unique_path(folder_path, article_filename(properties["title"]))
+    save_article(root_path, article_path, properties, "")
+    return build_article_summary(article_path, root_path)
+
+
+def rename_article(
+    root_path: Path,
+    article_relative_path: str,
+    new_title: str,
+    expected_fingerprint: str | None = None,
+) -> Dict[str, Any]:
+    """
+    Меняет заголовок статьи и приводит имя файла в соответствие ему.
+
+    Принимает корень базы, относительный путь статьи, новый заголовок и
+    отпечаток содержимого, полученный при открытии. Возвращает карточку
+    статьи с новым путём либо признак conflict, если статью тем временем
+    правил кто-то ещё — тогда ничего не переименовывается и не пишется.
+    """
+    article_path = resolve_inside_root(root_path, article_relative_path)
+    loaded = read_article(article_path)
+
+    if expected_fingerprint is not None and loaded["fingerprint"] != expected_fingerprint:
+        return {
+            "conflict": True,
+            "their_properties": loaded["properties"],
+            "their_body": loaded["body"],
+            "their_fingerprint": loaded["fingerprint"],
+        }
+
+    properties = dict(loaded["properties"])
+    properties["title"] = new_title.strip() or "Без названия"
+
+    target_path = article_path
+    desired_name = article_filename(properties["title"])
+    if desired_name != article_path.name:
+        target_path = unique_path(article_path.parent, desired_name)
+        os.replace(article_path, target_path)
+
+    save_article(
+        root_path, target_path, properties, loaded["body"], loaded["fingerprint"],
+    )
+    summary = build_article_summary(target_path, root_path)
+    summary["conflict"] = False
+    return summary
+
+
+def move_article(
+    root_path: Path, article_relative_path: str, target_folder_relative_path: str,
+) -> Dict[str, Any]:
+    """
+    Переносит статью в другой раздел.
+
+    Принимает корень базы, относительный путь статьи и относительный путь
+    раздела назначения. Возвращает карточку статьи с новым путём. Содержимое
+    файла не трогается: идентификатор остаётся прежним, поэтому ссылки на
+    статью продолжают работать.
+    """
+    article_path = resolve_inside_root(root_path, article_relative_path)
+    target_folder = resolve_inside_root(root_path, target_folder_relative_path)
+    target_folder.mkdir(parents=True, exist_ok=True)
+
+    if article_path.parent == target_folder:
+        return build_article_summary(article_path, root_path)
+
+    target_path = unique_path(target_folder, article_path.name)
+    shutil.move(str(article_path), str(target_path))
+    return build_article_summary(target_path, root_path)
+
+
+def create_folder(
+    root_path: Path, parent_relative_path: str, folder_name: str,
+) -> Dict[str, Any]:
+    """
+    Создаёт раздел внутри указанного раздела.
+
+    Принимает корень базы, относительный путь родителя и имя раздела.
+    Возвращает относительный путь созданной папки. Имя, начинающееся с точки,
+    отклоняется: такие папки в базе служебные и в дереве не показываются.
+    """
+    clean_name = sanitize_filename(folder_name, "")[:MAX_FILENAME_LENGTH].strip()
+    if not clean_name or is_service_directory(clean_name):
+        raise ValueError(f"Недопустимое имя раздела: {folder_name}")
+
+    parent_path = resolve_inside_root(root_path, parent_relative_path)
+    folder_path = parent_path / clean_name
+    if folder_path.exists():
+        return {
+            "created": False,
+            "relative_path": relative_path_string(folder_path, root_path),
+        }
+
+    folder_path.mkdir(parents=True)
+    return {
+        "created": True,
+        "relative_path": relative_path_string(folder_path, root_path),
+    }
+
+
+def rename_folder(
+    root_path: Path, folder_relative_path: str, new_name: str,
+) -> Dict[str, Any]:
+    """
+    Переименовывает раздел.
+
+    Принимает корень базы, относительный путь раздела и новое имя. Статьи
+    внутри не трогаются — их идентификаторы и ссылки на них не зависят от
+    того, как называется папка.
+    """
+    clean_name = sanitize_filename(new_name, "")[:MAX_FILENAME_LENGTH].strip()
+    if not clean_name or is_service_directory(clean_name):
+        raise ValueError(f"Недопустимое имя раздела: {new_name}")
+
+    folder_path = resolve_inside_root(root_path, folder_relative_path)
+    if folder_path == root_path.resolve():
+        raise ValueError("Корень базы знаний переименовать нельзя")
+
+    target_path = folder_path.parent / clean_name
+    if target_path.exists() and target_path != folder_path:
+        raise ValueError(f"Раздел «{clean_name}» уже существует")
+
+    os.replace(folder_path, target_path)
+    return {"relative_path": relative_path_string(target_path, root_path)}
+
+
+def count_articles_inside(folder_path: Path) -> int:
+    """
+    Считает статьи в разделе, включая вложенные разделы.
+
+    Принимает путь папки. Нужен, чтобы не дать удалить непустой раздел одним
+    кликом.
+    """
+    try:
+        return sum(1 for _ in folder_path.rglob(f"*{ARTICLE_SUFFIX}"))
+    except OSError:
+        return 0
+
+
+def delete_folder(root_path: Path, folder_relative_path: str) -> Dict[str, Any]:
+    """
+    Удаляет пустой раздел.
+
+    Принимает корень базы и относительный путь раздела. Раздел со статьями
+    НЕ удаляется — возвращается их количество, и пользователь сначала
+    разбирается со статьями. Скопом в корзину они не отправляются намеренно:
+    удаление раздела одним кликом унесло бы чужую работу, а восстанавливать
+    её пришлось бы по одной статье.
+    """
+    folder_path = resolve_inside_root(root_path, folder_relative_path)
+    if folder_path == root_path.resolve():
+        raise ValueError("Корень базы знаний удалить нельзя")
+
+    article_count = count_articles_inside(folder_path)
+    if article_count:
+        return {"deleted": False, "article_count": article_count}
+
+    shutil.rmtree(folder_path)
+    return {"deleted": True, "article_count": 0}
 
 
 # ── Блокировки редактирования ────────────────────────────────────────────────
