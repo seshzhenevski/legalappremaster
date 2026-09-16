@@ -23,6 +23,28 @@ const STATUS_STYLES = {
   "черновик": "kb-status kb-status-draft",
 };
 
+/**
+ * Приводит пойманную ошибку к тексту, пригодному для показа пользователю.
+ *
+ * Принимает что угодно из catch. Обычная ошибка JS несёт текст в поле
+ * message, но команды Tauri отклоняют обещание простой строкой — у неё
+ * такого поля нет, и обращение к нему дало бы пользователю «undefined»
+ * вместо объяснения.
+ */
+function describeError(error) {
+  if (typeof error === "string") {
+    return error;
+  }
+  if (error && typeof error.message === "string" && error.message) {
+    return error.message;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
 const knowledgeBase = {
   rootPath: "",
   articles: [],
@@ -136,7 +158,7 @@ async function reloadKnowledgeBase(announceResult) {
       showToast(`База знаний обновлена: статей — ${loaded.articles.length}`);
     }
   } catch (error) {
-    document.getElementById("kb-error-text").textContent = error.message;
+    document.getElementById("kb-error-text").textContent = describeError(error);
     showPane("kb-error-pane");
   }
 }
@@ -496,6 +518,6 @@ async function handleArticleClick(event) {
     const { open } = window.__TAURI__.shell;
     await open(link.dataset.kbExternal);
   } catch (error) {
-    showToast(`Не удалось открыть ссылку: ${error.message}`);
+    showToast(`Не удалось открыть ссылку: ${describeError(error)}`);
   }
 }

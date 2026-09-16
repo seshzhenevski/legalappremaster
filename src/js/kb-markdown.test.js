@@ -73,6 +73,22 @@ test("моноширинный участок выводится из-под к�
   assert.ok(!html.includes("<em>"));
 });
 
+test("числа рядом с моноширинным участком остаются числами", () => {
+  // Заполнитель, которым код прячется на время форматирования, не должен
+  // путаться с обычными числами: в статьях всюду сроки и суммы.
+  const html = renderMarkdown("Срок 5 рабочих дней, статус `Не согласовано`.");
+  assert.ok(html.includes("Срок 5 рабочих дней"));
+  assert.ok(html.includes("<code class=\"kb-code\">Не согласовано</code>"));
+  assert.ok(!html.includes("undefined"));
+});
+
+test("несколько моноширинных участков восстанавливаются каждый на своё место", () => {
+  const html = renderMarkdown("сначала `первый`, потом `второй`, и 10 дней");
+  assert.ok(html.includes(">первый</code>"));
+  assert.ok(html.includes(">второй</code>"));
+  assert.ok(html.includes("10 дней"));
+});
+
 test("горизонтальный разделитель отрисовывается", () => {
   assert.ok(renderMarkdown("текст\n\n---\n\nдалее").includes("<hr"));
 });
