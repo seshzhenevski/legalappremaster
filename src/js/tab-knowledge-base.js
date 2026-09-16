@@ -25,6 +25,11 @@ import { loadKnowledgeBaseRoot, saveKnowledgeBaseRoot } from "./kb-settings-stor
 import { extractHeadings, renderMarkdown } from "./kb-markdown.js";
 import { showToast } from "./toast.js";
 
+// Сколько ждать снятия замка при закрытии приложения. Обращение к бэкенду —
+// это запуск процесса, а запись на отключённый сетевой диск может встать
+// надолго; закрытие окна ждать этого не должно.
+const CLOSE_UNLOCK_TIMEOUT_MS = 4000;
+
 // Подписи и оформление статусов статьи из семантической палитры приложения.
 const STATUS_STYLES = {
   "актуально": "kb-status kb-status-current",
@@ -157,16 +162,37 @@ function releaseLockOnApplicationClose() {
   try {
     const { getCurrentWindow } = window.__TAURI__.window;
     getCurrentWindow().onCloseRequested(async () => {
-      if (editState.isEditing && editState.articleId) {
-        await requestKnowledgeBaseUnlock(
-          knowledgeBase.rootPath, editState.articleId,
-        );
-      }
+      await releaseLockBeforeClosing();
     });
   } catch (error) {
     // Подписка недоступна — замок снимется по истечении срока давности.
     console.warn("Не удалось подписаться на закрытие окна:", error);
   }
+}
+
+/**
+ * Пытается снять замок, но никогда не мешает приложению закрыться.
+ *
+ * Подписавшись на закрытие окна, Tauri перестаёт закрывать его само и ждёт,
+ * пока обработчик договорит: исключение внутри или зависший вызов оставляют
+ * окно висеть навсегда. Поэтому здесь и перехват любой ошибки, и предел
+ * ожидания — снятие замка на сетевом диске может встать надолго, если диск
+ * отключили. Не снятый замок — мелкая неприятность на два часа; окно,
+ * которое не закрывается, — поломка приложения.
+ */
+async function releaseLockBeforeClosing() {
+  if (!editState.isEditing || !editState.articleId) {
+    return;
+  }
+
+  const unlock = requestKnowledgeBaseUnlock(
+    knowledgeBase.rootPath, editState.articleId,
+  ).catch((error) => {
+    console.warn("Замок не снят при закрытии:", describeError(error));
+  });
+  const deadline = new Promise((resolve) => setTimeout(resolve, CLOSE_UNLOCK_TIMEOUT_MS));
+
+  await Promise.race([unlock, deadline]);
 }
 
 /**
