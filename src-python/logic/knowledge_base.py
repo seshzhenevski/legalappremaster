@@ -295,15 +295,22 @@ def relative_path_string(target_path: Path, root_path: Path) -> str:
     return relative.as_posix()
 
 
-def build_article_summary(article_path: Path, root_path: Path) -> Dict[str, Any]:
+def build_article_summary(
+    article_path: Path, root_path: Path, parsed: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
     """
     Собирает краткую карточку статьи для дерева.
 
-    Принимает путь к файлу и корень базы. Возвращает идентификатор, заголовок,
-    статус, значок и относительный путь. Заголовок берётся из свойств, а если
-    их нет — из имени файла, чтобы статья не осталась в дереве безымянной.
+    Принимает путь к файлу, корень базы и, необязательно, уже разобранное
+    содержимое. Возвращает идентификатор, заголовок, статус, значок и
+    относительный путь. Заголовок берётся из свойств, а если их нет — из
+    имени файла, чтобы статья не осталась в дереве безымянной.
+
+    Готовый разбор передаётся при массовой загрузке: файл на сетевом диске
+    читается один раз и на карточку, и на содержимое.
     """
-    parsed = parse_article(article_path.read_text(encoding="utf-8"))
+    if parsed is None:
+        parsed = parse_article(article_path.read_text(encoding="utf-8"))
     properties = parsed["properties"]
     return {
         "id": properties.get("id", ""),
@@ -315,11 +322,16 @@ def build_article_summary(article_path: Path, root_path: Path) -> Dict[str, Any]
     }
 
 
-def build_folder_node(folder_path: Path, root_path: Path) -> Dict[str, Any]:
+def build_folder_node(
+    folder_path: Path,
+    root_path: Path,
+    collected_articles: List[Dict[str, Any]] | None = None,
+) -> Dict[str, Any]:
     """
     Собирает один узел дерева: папку с вложенными папками и статьями.
 
-    Принимает путь папки и корень базы (для относительных путей). Рекурсивно
+    Принимает путь папки, корень базы (для относительных путей) и, если это
+    массовая загрузка, список для складывания статей целиком. Рекурсивно
     обходит вложенные папки. Нечитаемые файлы и папки пропускаются, а не
     роняют обход всего дерева: на общем диске часть путей может быть
     недоступна конкретному пользователю.
@@ -337,9 +349,20 @@ def build_folder_node(folder_path: Path, root_path: Path) -> Dict[str, Any]:
             if entry.is_dir():
                 if is_service_directory(entry.name):
                     continue
-                folders.append(build_folder_node(entry, root_path))
+                folders.append(
+                    build_folder_node(entry, root_path, collected_articles)
+                )
             elif entry.suffix.lower() == ARTICLE_SUFFIX:
-                articles.append(build_article_summary(entry, root_path))
+                file_text = entry.read_text(encoding="utf-8")
+                parsed = parse_article(file_text)
+                articles.append(build_article_summary(entry, root_path, parsed))
+                if collected_articles is not None:
+                    collected_articles.append({
+                        **build_article_summary(entry, root_path, parsed),
+                        "properties": parsed["properties"],
+                        "body": parsed["body"],
+                        "fingerprint": content_fingerprint(file_text),
+                    })
         except OSError:
             continue
 
@@ -362,6 +385,48 @@ def list_tree(root_path: Path) -> Dict[str, Any]:
     """
     canonical_root = root_path.resolve()
     return build_folder_node(canonical_root, canonical_root)
+
+
+def load_knowledge_base(root_path: Path) -> Dict[str, Any]:
+    """
+    Читает базу целиком одним вызовом: дерево и содержимое всех статей.
+
+    Принимает корень базы. Возвращает признак доступности, дерево разделов и
+    список статей с текстом и отпечатком содержимого.
+
+    Массовая загрузка выбрана намеренно. Каждое обращение к Python — это
+    запуск отдельного процесса примерно на три секунды, и если ходить за
+    каждой открытой статьёй отдельно, чтение базы превратится в ожидание.
+    Здесь платим один раз при открытии вкладки, а дальше интерфейс работает
+    из памяти: открытие статьи, переход по ссылке и поиск идут мгновенно.
+
+    Недоступный корень (сетевой диск отключён, папку перенесли, нет прав) —
+    обычное состояние, а не сбой, поэтому возвращается признаком available,
+    а не исключением: интерфейсу нужно показать понятное объяснение.
+    """
+    try:
+        canonical_root = root_path.resolve()
+        is_available = canonical_root.is_dir()
+    except OSError:
+        canonical_root = root_path
+        is_available = False
+
+    if not is_available:
+        return {
+            "available": False,
+            "root": str(root_path),
+            "tree": {"name": "", "relative_path": "", "folders": [], "articles": []},
+            "articles": [],
+        }
+
+    collected_articles: List[Dict[str, Any]] = []
+    tree = build_folder_node(canonical_root, canonical_root, collected_articles)
+    return {
+        "available": True,
+        "root": str(canonical_root),
+        "tree": tree,
+        "articles": collected_articles,
+    }
 
 
 # ── Создание, переименование и перенос ───────────────────────────────────────

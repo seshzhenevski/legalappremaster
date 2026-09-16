@@ -30,6 +30,7 @@ from logic.knowledge_base import (
     list_trash,
     list_tree,
     list_versions,
+    load_knowledge_base,
     lock_file_path,
     move_article,
     parse_article,
@@ -567,6 +568,84 @@ class FolderTests(unittest.TestCase):
     def test_folder_outside_root_is_rejected(self):
         with self.assertRaises(ValueError):
             delete_folder(self.root, "../../чужая папка")
+
+
+class BulkLoadTests(unittest.TestCase):
+    """
+    Массовая загрузка: дерево и все статьи одним вызовом.
+
+    От неё зависит скорость чтения базы — интерфейс держит результат в
+    памяти и дальше не обращается к бэкенду ни при открытии статьи, ни при
+    поиске.
+    """
+
+    def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary_directory.name)
+
+        save_article(
+            self.root,
+            self.root / "Договорная работа" / "Персональные данные" / "zaprosy.md",
+            {"id": "kb-1", "title": "Инструкция по запросам", "status": "актуально"},
+            "Субъект вправе требовать сведения.",
+        )
+        save_article(
+            self.root,
+            self.root / "Договорная работа" / "poziciya.md",
+            {"id": "kb-2", "title": "Позиция РКН"},
+            "Разъяснение регулятора.",
+        )
+
+    def tearDown(self):
+        self.temporary_directory.cleanup()
+
+    def test_all_articles_are_returned(self):
+        loaded = load_knowledge_base(self.root)
+        self.assertTrue(loaded["available"])
+        self.assertEqual(len(loaded["articles"]), 2)
+
+    def test_articles_carry_text_and_fingerprint(self):
+        loaded = load_knowledge_base(self.root)
+        article = next(a for a in loaded["articles"] if a["id"] == "kb-1")
+
+        self.assertEqual(article["body"], "Субъект вправе требовать сведения.")
+        self.assertTrue(article["fingerprint"])
+        self.assertEqual(article["properties"]["status"], "актуально")
+
+    def test_articles_carry_relative_paths(self):
+        loaded = load_knowledge_base(self.root)
+        paths = {article["relative_path"] for article in loaded["articles"]}
+        self.assertIn("Договорная работа/Персональные данные/zaprosy.md", paths)
+
+    def test_tree_is_returned_alongside_articles(self):
+        loaded = load_knowledge_base(self.root)
+        self.assertEqual(loaded["tree"]["folders"][0]["name"], "Договорная работа")
+
+    def test_service_folders_are_not_loaded_as_articles(self):
+        delete_article(
+            self.root, self.root / "Договорная работа" / "poziciya.md",
+        )
+        loaded = load_knowledge_base(self.root)
+
+        self.assertEqual(len(loaded["articles"]), 1)
+        self.assertNotIn(
+            ".trash",
+            " ".join(article["relative_path"] for article in loaded["articles"]),
+        )
+
+    def test_missing_root_is_reported_not_raised(self):
+        # Отключённый сетевой диск — обычное состояние, а не сбой:
+        # интерфейсу нужно показать объяснение, а не текст исключения.
+        loaded = load_knowledge_base(self.root / "нет такой папки")
+
+        self.assertFalse(loaded["available"])
+        self.assertEqual(loaded["articles"], [])
+
+    def test_empty_base_loads_without_articles(self):
+        with tempfile.TemporaryDirectory() as empty_directory:
+            loaded = load_knowledge_base(Path(empty_directory))
+            self.assertTrue(loaded["available"])
+            self.assertEqual(loaded["articles"], [])
 
 
 class RootSpellingTests(unittest.TestCase):

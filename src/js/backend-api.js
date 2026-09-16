@@ -198,3 +198,29 @@ export async function requestDashboardData(credentialsPath, spreadsheetId) {
     spreadsheet_id: spreadsheetId,
   });
 }
+
+/**
+ * Запрашивает у бэкенда базу знаний целиком.
+ *
+ * Принимает путь к корневой папке на сетевом диске. Возвращает признак
+ * доступности папки, дерево разделов и все статьи с текстом. Загрузка идёт
+ * одним вызовом намеренно: каждое обращение к бэкенду стоит около трёх
+ * секунд, поэтому вкладка платит это один раз при открытии, а дальше
+ * открывает статьи и ищет по ним из памяти.
+ */
+export async function requestKnowledgeBase(rootPath) {
+  return callBackendMethod("load_knowledge_base", { root_path: rootPath });
+}
+
+/**
+ * Запрашивает у бэкенда одну статью базы знаний заново.
+ *
+ * Принимает путь к корневой папке и относительный путь статьи. Нужен, когда
+ * статью изменил коллега и её надо обновить, не перечитывая базу целиком.
+ */
+export async function requestKnowledgeBaseArticle(rootPath, relativePath) {
+  return callBackendMethod("read_kb_article", {
+    root_path: rootPath,
+    relative_path: relativePath,
+  });
+}

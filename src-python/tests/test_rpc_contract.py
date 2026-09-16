@@ -44,6 +44,34 @@ class RustPythonContractTests(unittest.TestCase):
         parsed = json.loads(response_line)
         self.assertIn("result", parsed)
 
+    def test_knowledge_base_method_through_contract(self):
+        """Метод load_knowledge_base работает через контракт Rust ↔ Python."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as base_directory:
+            request = json.dumps({
+                "id": 1,
+                "method": "load_knowledge_base",
+                "params": {"root_path": base_directory},
+            })
+            response = json.loads(process_single_request(request))
+
+        self.assertNotIn("error", response)
+        self.assertTrue(response["result"]["available"])
+        self.assertEqual(response["result"]["articles"], [])
+
+    def test_missing_knowledge_base_folder_is_not_an_error(self):
+        """Недоступная папка базы возвращается признаком, а не ошибкой RPC."""
+        request = json.dumps({
+            "id": 1,
+            "method": "load_knowledge_base",
+            "params": {"root_path": "Z:/нет такой папки/база"},
+        })
+        response = json.loads(process_single_request(request))
+
+        self.assertNotIn("error", response)
+        self.assertFalse(response["result"]["available"])
+
     def test_penalty_method_through_contract(self):
         """Метод calculate_penalty работает через контракт Rust ↔ Python."""
         request = json.dumps({

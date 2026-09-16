@@ -8,6 +8,8 @@
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from logic.state_duty_calculator import calculate_duty_for_claim_amount
 from logic.penalty_calculator import calculate_penalty_for_debts
 from logic.company_lookup import find_company_by_inn
@@ -22,6 +24,11 @@ from logic.claim_generator import (
     find_claim_by_inn,
 )
 from logic.court_cases_dashboard import load_dashboard_data
+from logic.knowledge_base import (
+    load_knowledge_base,
+    read_article,
+    resolve_inside_root,
+)
 
 
 def handle_calculate_state_duty(params: dict, report_progress) -> dict:
@@ -163,6 +170,29 @@ def handle_load_dashboard_data(params: dict, report_progress) -> dict:
     return load_dashboard_data(params)
 
 
+def handle_load_knowledge_base(params: dict, report_progress) -> dict:
+    """
+    Обрабатывает запрос на загрузку базы знаний целиком.
+
+    Извлекает путь к корневой папке на сетевом диске и возвращает дерево
+    разделов вместе с текстом всех статей. Интерфейс держит это в памяти и
+    дальше открывает статьи и ищет по ним, не обращаясь к бэкенду.
+    """
+    return load_knowledge_base(Path(params["root_path"]))
+
+
+def handle_read_kb_article(params: dict, report_progress) -> dict:
+    """
+    Обрабатывает запрос на перечитывание одной статьи базы знаний.
+
+    Нужен, когда статья изменилась у коллеги и её нужно обновить, не
+    перечитывая базу целиком. Возвращает свойства, текст и отпечаток
+    содержимого.
+    """
+    root_path = Path(params["root_path"])
+    return read_article(resolve_inside_root(root_path, params["relative_path"]))
+
+
 # Карта методов RPC: имя метода → функция-обработчик.
 # Добавление нового метода — это одна строка здесь плюс одна функция выше.
 METHOD_HANDLERS = {
@@ -178,6 +208,8 @@ METHOD_HANDLERS = {
     "export_claim_document": handle_export_claim_document,
     "find_claim_by_inn": handle_find_claim_by_inn,
     "load_dashboard_data": handle_load_dashboard_data,
+    "load_knowledge_base": handle_load_knowledge_base,
+    "read_kb_article": handle_read_kb_article,
 }
 
 

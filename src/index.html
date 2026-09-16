@@ -648,6 +648,11 @@
           <span class="sidebar-icon" aria-hidden="true"><svg class="lucide" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 18v-7" /> <path d="M11.119 2.205a2 2 0 0 1 1.762 0l7.84 3.846A.5.5 0 0 1 20.5 7h-17a.5.5 0 0 1-.22-.949z" /> <path d="M14 18v-7" /> <path d="M18 18v-7" /> <path d="M3 22h18" /> <path d="M6 18v-7" /></svg></span>
           <span class="sidebar-label">Калькулятор госпошлины</span>
         </button>
+        <button data-tab-target="panel-knowledge-base" type="button"
+          class="sidebar-item" title="База знаний">
+          <span class="sidebar-icon" aria-hidden="true"><svg class="lucide" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20" /></svg></span>
+          <span class="sidebar-label">База знаний</span>
+        </button>
         <button data-tab-target="panel-dashboard" type="button"
           class="sidebar-item" title="Дашборд">
           <span class="sidebar-icon" aria-hidden="true"><svg class="lucide" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16" /> <path d="M18 17V9" /> <path d="M13 17V5" /> <path d="M8 17v-3" /></svg></span>
@@ -1353,6 +1358,92 @@
           <div id="duty-pdf-status" class="text-sm"></div>
         </div>
 
+      </div>
+    </section>
+
+    <!-- Панель: База знаний -->
+    <section id="panel-knowledge-base" data-tab-panel class="hidden h-full">
+
+      <!-- Папка базы ещё не выбрана -->
+      <div id="kb-setup-pane" class="h-full flex items-center justify-center">
+        <div class="bg-white rounded-xl border border-slate-200 p-8 max-w-md text-center space-y-4">
+          <p class="font-medium text-slate-700">База знаний не настроена</p>
+          <p class="text-sm text-slate-500">
+            Укажите общую папку юридического департамента на сетевом диске —
+            в ней хранятся статьи и документы базы.
+          </p>
+          <button type="button" data-kb-choose-root class="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-oncolor text-sm font-medium py-2.5 px-4 rounded-lg mx-auto">
+            Выбрать папку
+          </button>
+        </div>
+      </div>
+
+      <!-- Чтение базы с сетевого диска -->
+      <div id="kb-loading-pane" class="hidden h-full flex items-center justify-center">
+        <p class="text-sm text-slate-500">Загружаю базу знаний…</p>
+      </div>
+
+      <!-- Папка недоступна: диск отключён, папку перенесли или нет прав -->
+      <div id="kb-unavailable-pane" class="hidden h-full flex items-center justify-center">
+        <div class="bg-white rounded-xl border border-slate-200 p-8 max-w-lg text-center space-y-4">
+          <p class="font-medium text-slate-700">Папка базы знаний недоступна</p>
+          <p id="kb-unavailable-path" class="text-sm text-slate-500 break-all"></p>
+          <p class="text-sm text-slate-500">
+            Проверьте подключение к сетевому диску или выберите папку заново.
+          </p>
+          <button type="button" data-kb-choose-root class="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-oncolor text-sm font-medium py-2.5 px-4 rounded-lg mx-auto">
+            Выбрать папку
+          </button>
+        </div>
+      </div>
+
+      <!-- Ошибка чтения -->
+      <div id="kb-error-pane" class="hidden h-full flex items-center justify-center">
+        <div class="bg-white rounded-xl border border-slate-200 p-8 max-w-lg text-center space-y-3">
+          <p class="font-medium text-slate-700">Не удалось прочитать базу знаний</p>
+          <p id="kb-error-text" class="text-sm text-slate-500 break-all"></p>
+        </div>
+      </div>
+
+      <!-- Сама база: дерево слева, статья справа -->
+      <div id="kb-content-pane" class="hidden h-full grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-5">
+
+        <!-- Левая колонка: поиск и дерево -->
+        <div class="bg-white rounded-xl border border-slate-200 flex flex-col min-h-0">
+          <div class="p-3 border-b border-slate-100 space-y-2">
+            <input id="kb-search" type="search" autocomplete="off"
+              placeholder="Поиск по заголовкам и тексту"
+              class="w-full">
+            <div class="flex gap-2">
+              <button id="kb-refresh-button" type="button" class="flex-1 bg-slate-100 hover:bg-slate-200 rounded-lg py-2 text-sm"
+                title="Перечитать базу с сетевого диска">Обновить</button>
+              <button type="button" data-kb-choose-root class="px-3 bg-slate-100 hover:bg-slate-200 rounded-lg py-2 text-sm"
+                title="Сменить папку базы знаний">Папка</button>
+            </div>
+          </div>
+          <div id="kb-tree" class="flex-1 min-h-0 overflow-y-auto thin-scroll p-2"></div>
+        </div>
+
+        <!-- Правая колонка: статья -->
+        <div class="bg-white rounded-xl border border-slate-200 flex flex-col min-h-0">
+          <div id="kb-article-placeholder" class="flex-1 flex items-center justify-center">
+            <p class="text-sm text-slate-500">Выберите статью слева.</p>
+          </div>
+
+          <article id="kb-article" class="hidden flex-1 min-h-0 flex flex-col">
+            <header class="p-5 border-b border-slate-100 space-y-3">
+              <div class="flex items-start gap-3">
+                <span id="kb-article-icon" class="text-2xl leading-none" aria-hidden="true"></span>
+                <h2 id="kb-article-title" class="text-xl font-medium text-slate-700"></h2>
+              </div>
+              <div id="kb-article-properties" class="flex flex-wrap items-center gap-2"></div>
+            </header>
+            <div class="flex-1 min-h-0 overflow-y-auto thin-scroll">
+              <nav id="kb-article-toc" class="hidden"></nav>
+              <div id="kb-article-body" class="kb-body p-5"></div>
+            </div>
+          </article>
+        </div>
       </div>
     </section>
 

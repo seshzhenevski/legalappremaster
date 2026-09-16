@@ -13,6 +13,7 @@ import { initSorterTab } from "./tab-sorter.js";
 import { initPenaltyTab } from "./tab-penalty.js";
 import { initStateDutyTab } from "./tab-state-duty.js";
 import { initDashboardTab } from "./tab-dashboard.js";
+import { initKnowledgeBaseTab } from "./tab-knowledge-base.js";
 import { initDatePickers } from "./date-picker.js";
 
 /**
@@ -33,6 +34,7 @@ function initApplication() {
   initPenaltyTab();
   initStateDutyTab();
   initDashboardTab();
+  initKnowledgeBaseTab();
 }
 
 window.addEventListener("DOMContentLoaded", initApplication);
