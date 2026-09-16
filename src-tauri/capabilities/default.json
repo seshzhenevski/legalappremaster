@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Права главного окна: запуск Python-sidecar для расчётов",
+  "description": "Права главного окна: запуск Python-sidecar для расчётов. shell:allow-open ограничен в tauri.conf.json шаблоном ^https?:// — статьи базы знаний правят все пользователи, и клик по ссылке не должен запускать произвольный файл с сетевой папки.",
   "windows": ["main"],
   "permissions": [
     "core:default",
