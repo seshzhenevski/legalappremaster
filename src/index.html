@@ -1362,7 +1362,7 @@
     </section>
 
     <!-- Панель: База знаний -->
-    <section id="panel-knowledge-base" data-tab-panel class="hidden h-full">
+    <section id="panel-knowledge-base" data-tab-panel class="hidden h-full relative">
 
       <!-- Папка базы ещё не выбрана -->
       <div id="kb-setup-pane" class="h-full flex items-center justify-center">
@@ -1417,6 +1417,8 @@
             <div class="flex gap-2">
               <button id="kb-refresh-button" type="button" class="flex-1 bg-slate-100 hover:bg-slate-200 rounded-lg py-2 text-sm"
                 title="Перечитать базу с сетевого диска">Обновить</button>
+              <button id="kb-new-article-button" type="button" class="px-3 bg-slate-100 hover:bg-slate-200 rounded-lg py-2 text-sm"
+                title="Создать статью в выбранном разделе">Создать</button>
               <button type="button" data-kb-choose-root class="px-3 bg-slate-100 hover:bg-slate-200 rounded-lg py-2 text-sm"
                 title="Сменить папку базы знаний">Папка</button>
             </div>
@@ -1434,15 +1436,89 @@
             <header class="p-5 border-b border-slate-100 space-y-3">
               <div class="flex items-start gap-3">
                 <span id="kb-article-icon" class="text-2xl leading-none" aria-hidden="true"></span>
-                <h2 id="kb-article-title" class="text-xl font-medium text-slate-700"></h2>
+                <h2 id="kb-article-title" class="text-xl font-medium text-slate-700 flex-1"></h2>
+                <div class="flex gap-2 shrink-0">
+                  <button id="kb-edit-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm">Изменить</button>
+                  <button id="kb-versions-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                    title="Предыдущие версии статьи">Версии</button>
+                  <button id="kb-save-button" type="button" class="bg-blue-600 hover:bg-blue-700 text-oncolor rounded-lg px-3 py-1.5 text-sm font-medium hidden">Сохранить</button>
+                  <button id="kb-cancel-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm hidden">Отмена</button>
+                </div>
               </div>
+
+              <!-- Правка заголовка и статуса: только в режиме редактирования -->
+              <div id="kb-edit-properties" class="hidden flex flex-wrap items-center gap-2">
+                <input id="kb-edit-title" type="text" class="flex-1 min-w-[200px]"
+                  placeholder="Заголовок статьи">
+                <select id="kb-edit-status">
+                  <option value="актуально">актуально</option>
+                  <option value="устарело">устарело</option>
+                  <option value="черновик">черновик</option>
+                </select>
+                <input id="kb-edit-icon" type="text" maxlength="4" class="w-16 text-center"
+                  placeholder="значок" title="Значок статьи в дереве">
+              </div>
+
               <div id="kb-article-properties" class="flex flex-wrap items-center gap-2"></div>
+              <div id="kb-lock-banner" class="hidden kb-banner"></div>
             </header>
-            <div class="flex-1 min-h-0 overflow-y-auto thin-scroll">
+
+            <!-- Просмотр -->
+            <div id="kb-view-mode" class="flex-1 min-h-0 overflow-y-auto thin-scroll">
               <nav id="kb-article-toc" class="hidden"></nav>
               <div id="kb-article-body" class="kb-body p-5"></div>
             </div>
+
+            <!-- Правка: исходный текст слева, вид статьи справа -->
+            <div id="kb-edit-mode" class="hidden flex-1 min-h-0 flex flex-col">
+              <div id="kb-format-toolbar" class="flex flex-wrap gap-1 px-4 py-2 border-b border-slate-100"></div>
+              <div class="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2">
+                <textarea id="kb-editor" spellcheck="true"
+                  class="kb-editor-area thin-scroll" placeholder="Текст статьи"></textarea>
+                <div id="kb-preview" class="kb-body p-5 overflow-y-auto thin-scroll border-l border-slate-100"></div>
+              </div>
+            </div>
           </article>
+        </div>
+      </div>
+
+      <!-- Предыдущие версии статьи -->
+      <div id="kb-versions-overlay" class="hidden kb-overlay">
+        <div class="kb-dialog">
+          <div class="flex items-center justify-between gap-4 mb-3">
+            <p class="font-medium text-slate-700">Предыдущие версии</p>
+            <button id="kb-versions-close" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm">Закрыть</button>
+          </div>
+          <p class="text-sm text-slate-500 mb-3">
+            Хранятся последние 10 сохранений. Восстановление само попадает
+            в версии — откат можно отменить.
+          </p>
+          <div id="kb-versions-list" class="kb-versions-list thin-scroll"></div>
+          <div id="kb-version-preview" class="kb-body kb-version-preview thin-scroll hidden"></div>
+        </div>
+      </div>
+
+      <!-- Статью изменил кто-то ещё -->
+      <div id="kb-conflict-overlay" class="hidden kb-overlay">
+        <div class="kb-dialog">
+          <p class="font-medium text-slate-700 mb-2">Статья изменена другим пользователем</p>
+          <p class="text-sm text-slate-500 mb-4">
+            Пока вы правили, статью сохранил кто-то ещё. Ваши правки не записаны
+            и не потеряны — выберите, что с ними сделать.
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <button id="kb-conflict-copy" type="button" class="bg-blue-600 hover:bg-blue-700 text-oncolor rounded-lg px-3 py-1.5 text-sm font-medium">
+              Сохранить мою версию отдельной статьёй
+            </button>
+            <button id="kb-conflict-reload" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm">
+              Открыть чужую версию
+            </button>
+            <button id="kb-conflict-back" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm">
+              Вернуться к правке
+            </button>
+          </div>
+          <p class="text-sm text-slate-500 mt-4 mb-1">Чужая версия:</p>
+          <div id="kb-conflict-their-body" class="kb-body kb-version-preview thin-scroll"></div>
         </div>
       </div>
     </section>

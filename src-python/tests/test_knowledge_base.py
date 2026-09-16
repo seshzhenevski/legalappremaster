@@ -42,6 +42,7 @@ from logic.knowledge_base import (
     rename_article,
     rename_folder,
     restore_article,
+    restore_version,
     safe_child_path,
     save_article,
     serialize_article,
@@ -646,6 +647,65 @@ class BulkLoadTests(unittest.TestCase):
             loaded = load_knowledge_base(Path(empty_directory))
             self.assertTrue(loaded["available"])
             self.assertEqual(loaded["articles"], [])
+
+
+class RestoreVersionTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary_directory.name)
+        self.summary = create_article(self.root, "Раздел", "Инструкция")
+        self.relative_path = self.summary["relative_path"]
+        self.article_path = self.root / self.relative_path
+
+        for text in ("Первая версия", "Вторая версия", "Третья версия"):
+            loaded = read_article(self.article_path)
+            save_article(
+                self.root, self.article_path, loaded["properties"], text,
+                loaded["fingerprint"],
+            )
+
+    def tearDown(self):
+        self.temporary_directory.cleanup()
+
+    def test_restores_text_of_chosen_version(self):
+        versions = list_versions(self.root, self.summary["id"])
+        # Новые снимки первыми: [0] — «Вторая версия», снятая перед третьей.
+        restore_version(self.root, self.relative_path, versions[0]["name"])
+        self.assertEqual(read_article(self.article_path)["body"], "Вторая версия")
+
+    def test_restore_keeps_article_identity(self):
+        versions = list_versions(self.root, self.summary["id"])
+        restore_version(self.root, self.relative_path, versions[-1]["name"])
+
+        properties = read_article(self.article_path)["properties"]
+        self.assertEqual(properties["id"], self.summary["id"])
+        self.assertEqual(properties["title"], "Инструкция")
+
+    def test_restore_is_itself_undoable(self):
+        # Откат идёт обычным сохранением, поэтому текущий текст попадает
+        # в снимки и вернуться назад можно тем же способом.
+        before = read_article(self.article_path)["body"]
+        versions = list_versions(self.root, self.summary["id"])
+        restore_version(self.root, self.relative_path, versions[-1]["name"])
+
+        newest = list_versions(self.root, self.summary["id"])[0]
+        self.assertEqual(
+            read_version(self.root, self.summary["id"], newest["name"])["body"], before,
+        )
+
+    def test_restore_detects_foreign_change(self):
+        versions = list_versions(self.root, self.summary["id"])
+        stale = read_article(self.article_path)["fingerprint"]
+
+        loaded = read_article(self.article_path)
+        save_article(self.root, self.article_path, loaded["properties"], "Версия коллеги")
+
+        result = restore_version(
+            self.root, self.relative_path, versions[0]["name"],
+            expected_fingerprint=stale,
+        )
+        self.assertTrue(result["conflict"])
+        self.assertEqual(read_article(self.article_path)["body"], "Версия коллеги")
 
 
 class RootSpellingTests(unittest.TestCase):

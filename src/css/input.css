@@ -711,4 +711,109 @@
     background: var(--veil);
     font-weight: 500;
   }
+
+  /* ── База знаний: режим правки ──────────────────────────────────────────
+     Цвета берутся из тех же семантических токенов, что и остальная вкладка,
+     поэтому тёмная тема работает без отдельных правил. */
+  .kb-banner {
+    padding: 7px 11px;
+    border-radius: 8px;
+    background: rgb(var(--c-amber-50));
+    color: rgb(var(--c-amber-800));
+    font-size: 12px;
+  }
+
+  .kb-format-button {
+    min-width: 30px;
+    height: 28px;
+    padding: 0 7px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ink-secondary);
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .kb-format-button:hover {
+    background: var(--veil);
+    color: var(--ink);
+  }
+
+  .kb-editor-area {
+    width: 100%;
+    height: 100%;
+    padding: 20px;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: var(--ink);
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    resize: none;
+  }
+  .kb-editor-area:focus {
+    outline: none;
+    box-shadow: none;
+  }
+
+  /* ── Модальные окна вкладки ── */
+  .kb-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.45);
+  }
+  .kb-dialog {
+    width: 100%;
+    max-width: 640px;
+    max-height: 100%;
+    overflow-y: auto;
+    padding: 20px;
+    border: 1px solid rgb(var(--c-slate-200));
+    border-radius: 12px;
+    background: rgb(var(--c-white));
+  }
+
+  .kb-versions-list {
+    max-height: 240px;
+    overflow-y: auto;
+  }
+  .kb-version-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 2px;
+    border-bottom: 1px solid var(--hairline);
+    font-size: 13px;
+  }
+  .kb-version-when {
+    flex: 1;
+    color: var(--ink);
+  }
+  .kb-version-action {
+    padding: 3px 9px;
+    border: none;
+    border-radius: 6px;
+    background: var(--veil);
+    color: var(--ink-secondary);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .kb-version-action:hover {
+    color: var(--accent);
+  }
+  .kb-version-preview {
+    max-height: 260px;
+    overflow-y: auto;
+    margin-top: 12px;
+    padding: 14px;
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+  }
 }

@@ -491,14 +491,19 @@ def create_article(
     author: str = "",
     category: str = "",
     icon: str = "",
+    body: str = "",
 ) -> Dict[str, Any]:
     """
-    Создаёт пустую статью в указанном разделе.
+    Создаёт статью в указанном разделе.
 
     Принимает корень базы, относительный путь раздела, заголовок и
-    необязательные автора, категорию и значок. Возвращает карточку созданной
-    статьи. Новая статья заводится со статусом «черновик»: она ещё не
-    проверена и не должна выглядеть в дереве как действующая инструкция.
+    необязательные автора, категорию, значок и готовый текст. Возвращает
+    карточку созданной статьи. Новая статья заводится со статусом
+    «черновик»: она ещё не проверена и не должна выглядеть в дереве как
+    действующая инструкция.
+
+    Текст пригодится, когда статья создаётся не с нуля: например, при
+    конфликте правок пользователь сохраняет свою версию отдельной копией.
     """
     folder_path = resolve_inside_root(root_path, folder_relative_path)
     folder_path.mkdir(parents=True, exist_ok=True)
@@ -516,7 +521,7 @@ def create_article(
     }
 
     article_path = unique_path(folder_path, article_filename(properties["title"]))
-    save_article(root_path, article_path, properties, "")
+    save_article(root_path, article_path, properties, body)
     return build_article_summary(article_path, root_path)
 
 
@@ -921,6 +926,38 @@ def read_version(root_path: Path, article_id: str, version_name: str) -> Dict[st
         versions_directory(root_path, article_id), version_name,
     )
     return parse_article(snapshot_path.read_text(encoding="utf-8"))
+
+
+def restore_version(
+    root_path: Path,
+    article_relative_path: str,
+    version_name: str,
+    expected_fingerprint: str | None = None,
+) -> Dict[str, Any]:
+    """
+    Возвращает статью к содержимому одного из снимков.
+
+    Принимает корень базы, относительный путь статьи, имя снимка и отпечаток
+    текущего содержимого. Восстановление идёт обычным сохранением, поэтому
+    текущая версия сама попадает в снимки — откат можно отменить тем же
+    способом, каким он сделан.
+    """
+    article_path = resolve_inside_root(root_path, article_relative_path)
+    current = read_article(article_path)
+    article_id = current["properties"].get("id", "")
+
+    snapshot = read_version(root_path, article_id, version_name)
+    # Свойства берём текущие: идентификатор, автор и категория не должны
+    # откатываться вместе с текстом.
+    properties = dict(current["properties"])
+    return save_article(
+        root_path,
+        article_path,
+        properties,
+        snapshot["body"],
+        expected_fingerprint if expected_fingerprint is not None
+        else current["fingerprint"],
+    )
 
 
 def safe_child_path(parent_path: Path, child_name: str) -> Path:

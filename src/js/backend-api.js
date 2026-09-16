@@ -224,3 +224,74 @@ export async function requestKnowledgeBaseArticle(rootPath, relativePath) {
     relative_path: relativePath,
   });
 }
+
+/**
+ * Сохраняет статью базы знаний.
+ *
+ * Принимает корень базы, относительный путь, свойства, текст и отпечаток
+ * содержимого, полученный при открытии. Возвращает признак conflict, если
+ * статью тем временем правил кто-то другой: в этом случае файл не
+ * перезаписывается, а чужая версия приходит в ответе.
+ */
+export async function requestKnowledgeBaseSave(request) {
+  return callBackendMethod("save_kb_article", request);
+}
+
+/**
+ * Создаёт статью базы знаний.
+ *
+ * Принимает корень базы, раздел, заголовок, автора и необязательный готовый
+ * текст. Возвращает карточку созданной статьи.
+ */
+export async function requestKnowledgeBaseCreate(request) {
+  return callBackendMethod("create_kb_article", request);
+}
+
+/**
+ * Захватывает статью на редактирование.
+ *
+ * Принимает корень базы, идентификатор статьи и признак перехвата брошенного
+ * замка. Возвращает признак успеха и сведения о том, кто держит статью.
+ */
+export async function requestKnowledgeBaseLock(rootPath, articleId, force = false) {
+  return callBackendMethod("acquire_kb_lock", {
+    root_path: rootPath, article_id: articleId, force: force,
+  });
+}
+
+/**
+ * Снимает замок со статьи. Чужой замок не снимается.
+ */
+export async function requestKnowledgeBaseUnlock(rootPath, articleId) {
+  return callBackendMethod("release_kb_lock", {
+    root_path: rootPath, article_id: articleId,
+  });
+}
+
+/**
+ * Перечисляет снимки предыдущих версий статьи, новые первыми.
+ */
+export async function requestKnowledgeBaseVersions(rootPath, articleId) {
+  return callBackendMethod("list_kb_versions", {
+    root_path: rootPath, article_id: articleId,
+  });
+}
+
+/**
+ * Читает содержимое одного снимка версии — показать до восстановления.
+ */
+export async function requestKnowledgeBaseVersion(rootPath, articleId, versionName) {
+  return callBackendMethod("read_kb_version", {
+    root_path: rootPath, article_id: articleId, version_name: versionName,
+  });
+}
+
+/**
+ * Восстанавливает статью из снимка версии.
+ *
+ * Восстановление идёт обычным сохранением, поэтому текущая версия сама
+ * попадает в снимки и откат можно отменить.
+ */
+export async function requestKnowledgeBaseVersionRestore(request) {
+  return callBackendMethod("restore_kb_version", request);
+}

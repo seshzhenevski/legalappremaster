@@ -25,9 +25,17 @@ from logic.claim_generator import (
 )
 from logic.court_cases_dashboard import load_dashboard_data
 from logic.knowledge_base import (
+    acquire_lock,
+    check_lock,
+    create_article,
+    list_versions,
     load_knowledge_base,
     read_article,
+    read_version,
+    release_lock,
     resolve_inside_root,
+    restore_version,
+    save_article,
 )
 
 
@@ -193,6 +201,113 @@ def handle_read_kb_article(params: dict, report_progress) -> dict:
     return read_article(resolve_inside_root(root_path, params["relative_path"]))
 
 
+def handle_save_kb_article(params: dict, report_progress) -> dict:
+    """
+    Обрабатывает сохранение статьи базы знаний.
+
+    Извлекает корень базы, относительный путь, свойства, текст и отпечаток
+    содержимого, полученный при открытии статьи. Возвращает признак conflict,
+    если статью тем временем правил кто-то другой, — перезаписи в этом случае
+    не происходит.
+    """
+    root_path = Path(params["root_path"])
+    article_path = resolve_inside_root(root_path, params["relative_path"])
+    return save_article(
+        root_path,
+        article_path,
+        params["properties"],
+        params["body"],
+        params.get("expected_fingerprint"),
+    )
+
+
+def handle_create_kb_article(params: dict, report_progress) -> dict:
+    """
+    Обрабатывает создание статьи базы знаний.
+
+    Извлекает корень базы, раздел, заголовок и автора. Возвращает карточку
+    созданной статьи с её постоянным идентификатором.
+    """
+    return create_article(
+        Path(params["root_path"]),
+        params.get("folder_relative_path", ""),
+        params["title"],
+        params.get("author", ""),
+        params.get("category", ""),
+        params.get("icon", ""),
+        params.get("body", ""),
+    )
+
+
+def handle_acquire_kb_lock(params: dict, report_progress) -> dict:
+    """
+    Обрабатывает захват статьи на редактирование.
+
+    Извлекает корень базы, идентификатор статьи и признак перехвата
+    брошенного замка. Возвращает признак успеха и сведения о том, кто
+    держит статью, если захватить не удалось.
+    """
+    return acquire_lock(
+        Path(params["root_path"]),
+        params["article_id"],
+        force=bool(params.get("force", False)),
+    )
+
+
+def handle_release_kb_lock(params: dict, report_progress) -> dict:
+    """
+    Обрабатывает снятие замка со статьи.
+
+    Извлекает корень базы и идентификатор статьи. Чужой замок не снимается.
+    """
+    return release_lock(Path(params["root_path"]), params["article_id"])
+
+
+def handle_check_kb_lock(params: dict, report_progress) -> dict | None:
+    """
+    Обрабатывает проверку, занята ли статья кем-то на редактирование.
+
+    Возвращает сведения о владельце замка или None, если статья свободна.
+    """
+    return check_lock(Path(params["root_path"]), params["article_id"])
+
+
+def handle_list_kb_versions(params: dict, report_progress) -> list:
+    """
+    Обрабатывает запрос списка снимков предыдущих версий статьи.
+
+    Возвращает записи с именем снимка и временем сохранения, новые первыми.
+    """
+    return list_versions(Path(params["root_path"]), params["article_id"])
+
+
+def handle_read_kb_version(params: dict, report_progress) -> dict:
+    """
+    Обрабатывает чтение содержимого одного снимка версии.
+
+    Нужен, чтобы показать прежнюю версию до того, как пользователь решит
+    её восстанавливать.
+    """
+    return read_version(
+        Path(params["root_path"]), params["article_id"], params["version_name"],
+    )
+
+
+def handle_restore_kb_version(params: dict, report_progress) -> dict:
+    """
+    Обрабатывает восстановление статьи из снимка.
+
+    Восстановление идёт обычным сохранением, поэтому текущая версия сама
+    попадает в снимки и откат можно отменить тем же способом.
+    """
+    return restore_version(
+        Path(params["root_path"]),
+        params["relative_path"],
+        params["version_name"],
+        params.get("expected_fingerprint"),
+    )
+
+
 # Карта методов RPC: имя метода → функция-обработчик.
 # Добавление нового метода — это одна строка здесь плюс одна функция выше.
 METHOD_HANDLERS = {
@@ -210,6 +325,14 @@ METHOD_HANDLERS = {
     "load_dashboard_data": handle_load_dashboard_data,
     "load_knowledge_base": handle_load_knowledge_base,
     "read_kb_article": handle_read_kb_article,
+    "save_kb_article": handle_save_kb_article,
+    "create_kb_article": handle_create_kb_article,
+    "acquire_kb_lock": handle_acquire_kb_lock,
+    "release_kb_lock": handle_release_kb_lock,
+    "check_kb_lock": handle_check_kb_lock,
+    "list_kb_versions": handle_list_kb_versions,
+    "read_kb_version": handle_read_kb_version,
+    "restore_kb_version": handle_restore_kb_version,
 }
 
 
