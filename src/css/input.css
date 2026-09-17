@@ -963,4 +963,52 @@
     color: var(--accent);
     font-weight: 500;
   }
+
+  /* ── Ссылки между статьями ─────────────────────────────────────────── */
+
+  /* Ссылка на удалённую статью: видно, что материал был, но исчез. */
+  .kb-link-broken {
+    color: var(--ink-muted);
+    text-decoration: line-through;
+    text-decoration-color: rgb(var(--c-red-500));
+    cursor: help;
+  }
+
+  #kb-backlinks {
+    margin: 0 20px 20px;
+    padding-top: 14px;
+    border-top: 1px solid var(--hairline);
+  }
+  .kb-backlinks-caption {
+    margin-bottom: 6px;
+    color: var(--ink-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .kb-backlink {
+    display: block;
+    width: 100%;
+    padding: 5px 8px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--ink);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .kb-backlink:hover {
+    background: var(--accent-wash);
+    color: var(--accent);
+  }
+
+  .kb-modal-list-label {
+    display: block;
+  }
+  .kb-modal-list-hint {
+    display: block;
+    color: var(--ink-muted);
+    font-size: 11px;
+  }
 }

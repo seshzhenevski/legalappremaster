@@ -67,3 +67,16 @@
 .toastui-editor-contents a {
   color: var(--accent) !important;
 }
+
+/* Наша кнопка в панели редактора: библиотека рисует свои значки спрайтом,
+   у этой значок текстовый, поэтому фон спрайта нужно убрать. */
+.kb-toolbar-article-link {
+  background-image: none !important;
+  font-size: 15px;
+  line-height: 1;
+  color: #555;
+}
+.toastui-editor-dark .kb-toolbar-article-link {
+  color: #eee;
+}
+

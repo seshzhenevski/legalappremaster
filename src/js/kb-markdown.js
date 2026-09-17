@@ -21,6 +21,11 @@ const HORIZONTAL_RULE_PATTERN = /^(-{3,}|\*{3,}|_{3,})$/;
 const CODE_FENCE_PATTERN = /^```/;
 const TABLE_SEPARATOR_PATTERN = /^\|?[\s:|-]+\|[\s:|-]*$/;
 
+// Ссылка на другую статью хранится идентификатором, а не именем файла и
+// не заголовком: статью переименовывают и переносят, а ссылка должна
+// продолжать работать.
+const ARTICLE_LINK_PATTERN = /^kb-[0-9a-z]{4,}$/i;
+
 /**
  * Экранирует символы, имеющие в HTML особое значение.
  *
@@ -92,7 +97,7 @@ export function extractHeadings(markdownText) {
  * обрабатываются первыми и выводятся из-под остального форматирования —
  * иначе звёздочки внутри кода превратились бы в курсив.
  */
-function renderInline(escapedText) {
+function renderInline(escapedText, articlesById) {
   // Заполнитель из области частного использования: обычный текст статьи
   // такого символа не содержит, поэтому спрятанный код не спутается с
   // числами. Записан escape-последовательностью — сам символ невидим и в
@@ -105,7 +110,7 @@ function renderInline(escapedText) {
 
   text = text.replace(
     /\[([^\]]+)\]\(([^)\s]+)\)/g,
-    (whole, label, url) => renderLink(label, url),
+    (whole, label, url) => renderLink(label, url, articlesById),
   );
   text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   text = text.replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>");
@@ -125,11 +130,52 @@ function renderInline(escapedText) {
  * вроде javascript: выполнили бы код в окне приложения, а ссылки на статьи
  * и документы появятся отдельными видами и через другую разметку.
  */
-function renderLink(label, url) {
+function renderLink(label, url, articlesById) {
+  if (ARTICLE_LINK_PATTERN.test(url)) {
+    return renderArticleLink(label, url, articlesById);
+  }
   if (!/^https?:\/\//i.test(url)) {
     return label;
   }
   return `<a class="kb-link" data-kb-external="${url}" href="#">${label}</a>`;
+}
+
+/**
+ * Отрисовывает ссылку на другую статью базы.
+ *
+ * Принимает подпись из текста, идентификатор статьи и справочник статей.
+ * Подпись берётся из справочника, а не из текста: статью могли переименовать
+ * после того, как ссылку поставили, и в тексте осталось прежнее название.
+ *
+ * Если статья не найдена, ссылка показывается помеченной как битая, а не
+ * ведёт в никуда: читатель должен видеть, что материал исчез.
+ */
+function renderArticleLink(label, articleId, articlesById) {
+  const target = articlesById ? articlesById.get(articleId.toLowerCase()) : null;
+  if (!target) {
+    return `<span class="kb-link-broken" title="Статья не найдена">${label}</span>`;
+  }
+  return `<a class="kb-link" data-kb-article-link="${articleId}" href="#">`
+    + `${escapeHtml(target.title)}</a>`;
+}
+
+/**
+ * Перечисляет идентификаторы статей, на которые ссылается текст.
+ *
+ * Принимает разметку статьи. Возвращает набор идентификаторов — по нему
+ * строится блок обратных ссылок «Ссылки на эту статью».
+ */
+export function extractArticleLinks(markdownText) {
+  const found = new Set();
+  const pattern = /\[[^\]]*\]\(([^)\s]+)\)/g;
+  let match = pattern.exec(String(markdownText ?? ""));
+  while (match) {
+    if (ARTICLE_LINK_PATTERN.test(match[1])) {
+      found.add(match[1].toLowerCase());
+    }
+    match = pattern.exec(String(markdownText ?? ""));
+  }
+  return found;
 }
 
 /**
@@ -139,7 +185,7 @@ function renderLink(label, url) {
  * в контейнер статьи. Неизвестная разметка остаётся обычным текстом —
  * статья должна открыться в любом случае, пусть и без оформления.
  */
-export function renderMarkdown(markdownText) {
+export function renderMarkdown(markdownText, articlesById) {
   const lines = String(markdownText ?? "").split(/\r?\n/);
   const htmlParts = [];
 
@@ -154,7 +200,7 @@ export function renderMarkdown(markdownText) {
 
   function flushParagraph() {
     if (paragraphLines.length) {
-      htmlParts.push(`<p>${renderInline(paragraphLines.join("<br>"))}</p>`);
+      htmlParts.push(`<p>${renderInline(paragraphLines.join("<br>"), articlesById)}</p>`);
       paragraphLines = [];
     }
   }
@@ -170,7 +216,7 @@ export function renderMarkdown(markdownText) {
   function flushQuote() {
     if (quoteLines.length) {
       htmlParts.push(
-        `<blockquote class="kb-quote">${renderInline(quoteLines.join("<br>"))}</blockquote>`,
+        `<blockquote class="kb-quote">${renderInline(quoteLines.join("<br>"), articlesById)}</blockquote>`,
       );
       quoteLines = [];
     }
@@ -182,10 +228,10 @@ export function renderMarkdown(markdownText) {
     }
     const [headerRow, ...bodyRows] = tableRows;
     const head = headerRow
-      .map((cell) => `<th>${renderInline(cell)}</th>`)
+      .map((cell) => `<th>${renderInline(cell, articlesById)}</th>`)
       .join("");
     const body = bodyRows
-      .map((row) => `<tr>${row.map((cell) => `<td>${renderInline(cell)}</td>`).join("")}</tr>`)
+      .map((row) => `<tr>${row.map((cell) => `<td>${renderInline(cell, articlesById)}</td>`).join("")}</tr>`)
       .join("");
     htmlParts.push(
       `<div class="kb-table-scroll"><table class="kb-table">` +
@@ -240,7 +286,7 @@ export function renderMarkdown(markdownText) {
       headingIndex += 1;
       htmlParts.push(
         `<h${level} id="${anchorId}" class="kb-heading kb-heading-${level}">` +
-        `${renderInline(headingText)}</h${level}>`,
+        `${renderInline(headingText, articlesById)}</h${level}>`,
       );
       continue;
     }
@@ -258,7 +304,7 @@ export function renderMarkdown(markdownText) {
       listItems.push(
         `<li class="kb-check${isChecked ? " kb-check-done" : ""}">` +
         `<span class="kb-check-box" aria-hidden="true">${isChecked ? "✓" : ""}</span>` +
-        `<span>${renderInline(escapeHtml(checklistMatch[2]))}</span></li>`,
+        `<span>${renderInline(escapeHtml(checklistMatch[2]), articlesById)}</span></li>`,
       );
       continue;
     }
@@ -275,7 +321,7 @@ export function renderMarkdown(markdownText) {
         listTag = wantedTag;
       }
       const itemText = (unorderedMatch || orderedMatch)[1];
-      listItems.push(`<li>${renderInline(escapeHtml(itemText))}</li>`);
+      listItems.push(`<li>${renderInline(escapeHtml(itemText), articlesById)}</li>`);
       continue;
     }
 

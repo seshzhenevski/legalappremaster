@@ -28,10 +28,14 @@ import {
   requestKnowledgeBaseVersionRestore,
   requestKnowledgeBaseVersions,
 } from "./backend-api.js";
-import { askConfirm, askFolderChoice, askText } from "./kb-dialog.js";
+import { askChoice, askConfirm, askText } from "./kb-dialog.js";
 import { selectDirectory } from "./file-dialogs.js";
 import { loadKnowledgeBaseRoot, saveKnowledgeBaseRoot } from "./kb-settings-store.js";
-import { extractHeadings, renderMarkdown } from "./kb-markdown.js";
+import {
+  extractArticleLinks,
+  extractHeadings,
+  renderMarkdown,
+} from "./kb-markdown.js";
 import { createVisualEditor } from "./kb-wysiwyg.js";
 import { showToast } from "./toast.js";
 
@@ -73,6 +77,8 @@ const knowledgeBase = {
   rootPath: "",
   articles: [],
   articlesByPath: new Map(),
+  articlesById: new Map(),
+  backlinks: new Map(),
   tree: null,
   isLoaded: false,
 };
@@ -285,6 +291,7 @@ async function reloadKnowledgeBase(announceResult) {
       loaded.articles.map((article) => [article.relative_path, article]),
     );
     knowledgeBase.isLoaded = true;
+    rebuildLinkIndex();
 
     showPane("kb-content-pane");
     renderTreePane();
@@ -562,10 +569,12 @@ function showArticle(relativePath) {
 
   document.getElementById("kb-article-icon").textContent = article.icon || "📄";
   document.getElementById("kb-article-title").textContent = article.title;
-  document.getElementById("kb-article-body").innerHTML = renderMarkdown(article.body);
+  document.getElementById("kb-article-body").innerHTML =
+    renderMarkdown(article.body, knowledgeBase.articlesById);
 
   renderArticleProperties(article);
   renderTableOfContents(article.body);
+  renderBacklinks(article);
 }
 
 /**
@@ -668,6 +677,13 @@ function showEmptyArticle() {
  * открываются снаружи — во внешнем браузере, как того требует ТЗ.
  */
 async function handleArticleClick(event) {
+  const articleLink = event.target.closest("[data-kb-article-link]");
+  if (articleLink) {
+    event.preventDefault();
+    openArticleById(articleLink.dataset.kbArticleLink);
+    return;
+  }
+
   const link = event.target.closest("[data-kb-external]");
   if (!link) {
     return;
@@ -712,6 +728,14 @@ function buildFormatToolbar() {
   const toolbar = document.getElementById("kb-format-toolbar");
   toolbar.innerHTML = "";
 
+  const articleLinkButton = document.createElement("button");
+  articleLinkButton.type = "button";
+  articleLinkButton.className = "kb-format-button";
+  articleLinkButton.textContent = "⧉";
+  articleLinkButton.title = "Ссылка на статью базы знаний";
+  articleLinkButton.addEventListener("click", handleInsertArticleLink);
+  toolbar.appendChild(articleLinkButton);
+
   FORMAT_BUTTONS.forEach((format) => {
     const button = document.createElement("button");
     button.type = "button";
@@ -754,8 +778,9 @@ function applyFormat(format) {
  * Перерисовывает предпросмотр статьи по текущему тексту редактора.
  */
 function updatePreview() {
-  document.getElementById("kb-preview").innerHTML =
-    renderMarkdown(document.getElementById("kb-editor").value);
+  document.getElementById("kb-preview").innerHTML = renderMarkdown(
+    document.getElementById("kb-editor").value, knowledgeBase.articlesById,
+  );
 }
 
 /**
@@ -984,7 +1009,7 @@ async function handleNewArticleClick() {
  */
 function showConflict(result) {
   document.getElementById("kb-conflict-their-body").innerHTML =
-    renderMarkdown(result.their_body);
+    renderMarkdown(result.their_body, knowledgeBase.articlesById);
   showOverlay("kb-conflict-overlay");
 }
 
@@ -1119,7 +1144,7 @@ async function showVersion(article, version) {
       knowledgeBase.rootPath, article.id, version.name,
     );
     const preview = document.getElementById("kb-version-preview");
-    preview.innerHTML = renderMarkdown(snapshot.body);
+    preview.innerHTML = renderMarkdown(snapshot.body, knowledgeBase.articlesById);
     preview.classList.remove("hidden");
   } catch (error) {
     showToast(`Не удалось прочитать версию: ${describeError(error)}`);
@@ -1408,10 +1433,10 @@ function collectFolders(folderNode, collected = []) {
     return collected;
   }
   if (!collected.length) {
-    collected.push({ relativePath: "", label: "Корень базы знаний" });
+    collected.push({ value: "", label: "Корень базы знаний" });
   }
   folderNode.folders.forEach((child) => {
-    collected.push({ relativePath: child.relative_path, label: child.relative_path });
+    collected.push({ value: child.relative_path, label: child.relative_path });
     collectFolders(child, collected);
   });
   return collected;
@@ -1542,7 +1567,7 @@ async function handleMoveClick() {
   }
 
   const folders = collectFolders(knowledgeBase.tree);
-  const targetPath = await askFolderChoice(
+  const targetPath = await askChoice(
     `Перенести «${article.title}» в раздел:`, folders,
   );
   if (targetPath === null) {
@@ -1688,6 +1713,7 @@ function ensureVisualEditor(markdown) {
       markdown: startingText,
       isDark: isDarkTheme(),
       onChange: syncSourceFromVisual,
+      onInsertArticleLink: handleInsertArticleLink,
     });
     watchThemeForEditor();
   } catch (error) {
@@ -1750,4 +1776,139 @@ function disposeVisualEditor() {
     visualEditor.destroy();
     visualEditor = null;
   }
+}
+
+// ── Ссылки между статьями ────────────────────────────────────────────────────
+// Ссылка хранит постоянный идентификатор статьи, а не имя файла и не
+// заголовок: статью переименовывают и переносят, ссылка должна пережить это.
+// Заголовок подставляется при отображении — из справочника, собранного при
+// загрузке базы.
+
+/**
+ * Собирает справочник статей по идентификаторам и указатель обратных ссылок.
+ *
+ * Обе таблицы строятся из той же памяти, что и дерево, без обращения к
+ * бэкенду: вся база уже прочитана, и отдельный поисковый индекс ради этого
+ * не нужен.
+ */
+function rebuildLinkIndex() {
+  knowledgeBase.articlesById = new Map();
+  knowledgeBase.backlinks = new Map();
+
+  knowledgeBase.articles.forEach((article) => {
+    if (article.id) {
+      knowledgeBase.articlesById.set(article.id.toLowerCase(), article);
+    }
+  });
+
+  knowledgeBase.articles.forEach((article) => {
+    extractArticleLinks(article.body).forEach((targetId) => {
+      if (!knowledgeBase.backlinks.has(targetId)) {
+        knowledgeBase.backlinks.set(targetId, []);
+      }
+      knowledgeBase.backlinks.get(targetId).push(article);
+    });
+  });
+}
+
+/**
+ * Заполняет блок «Ссылки на эту статью».
+ *
+ * Принимает карточку статьи. Блок показывается только когда ссылки есть —
+ * пустой заголовок внизу каждой статьи лишь занимал бы место.
+ */
+function renderBacklinks(article) {
+  const container = document.getElementById("kb-backlinks");
+  container.innerHTML = "";
+
+  const sources = knowledgeBase.backlinks.get((article.id || "").toLowerCase()) || [];
+  if (!sources.length) {
+    container.classList.add("hidden");
+    return;
+  }
+  container.classList.remove("hidden");
+
+  const caption = document.createElement("p");
+  caption.className = "kb-backlinks-caption";
+  caption.textContent = `Ссылки на эту статью: ${sources.length}`;
+  container.appendChild(caption);
+
+  sources.forEach((source) => {
+    const link = document.createElement("button");
+    link.type = "button";
+    link.className = "kb-backlink";
+    link.textContent = `${source.icon || "📄"} ${source.title}`;
+    link.addEventListener("click", () => openArticleById(source.id));
+    container.appendChild(link);
+  });
+}
+
+/**
+ * Открывает статью по её идентификатору.
+ *
+ * Принимает идентификатор. Если статья не найдена (удалена, а ссылка
+ * осталась), сообщает об этом вместо молчаливого бездействия.
+ */
+function openArticleById(articleId) {
+  if (editState.isEditing) {
+    showToast("Сначала сохраните или отмените правки открытой статьи");
+    return;
+  }
+  const article = knowledgeBase.articlesById.get((articleId || "").toLowerCase());
+  if (!article) {
+    showToast("Статья не найдена — возможно, её удалили");
+    return;
+  }
+  showArticle(article.relative_path);
+  renderTreePane();
+}
+
+/**
+ * Предлагает выбрать статью и возвращает разметку ссылки на неё.
+ *
+ * Возвращает строку вида [Заголовок](kb-1a2b3c4d) либо null. Заголовок
+ * пишется в текст, чтобы файл оставался понятным и в проводнике, но при
+ * отображении подставляется актуальный — на случай переименования.
+ */
+async function buildArticleLinkMarkup() {
+  const items = knowledgeBase.articles
+    .filter((article) => article.id && article.relative_path !== editState.relativePath)
+    .map((article) => ({
+      value: article.id,
+      label: article.title,
+      hint: article.relative_path,
+    }));
+
+  if (!items.length) {
+    showToast("В базе пока нет других статей, на которые можно сослаться");
+    return null;
+  }
+
+  const chosenId = await askChoice("Ссылка на статью", items);
+  if (!chosenId) {
+    return null;
+  }
+  const target = knowledgeBase.articlesById.get(chosenId.toLowerCase());
+  return `[${target.title}](${chosenId})`;
+}
+
+/**
+ * Вставляет ссылку на статью в тот редактор, который сейчас открыт.
+ */
+async function handleInsertArticleLink() {
+  const markup = await buildArticleLinkMarkup();
+  if (!markup) {
+    return;
+  }
+
+  if (editorMode === "visual" && visualEditor) {
+    visualEditor.insertMarkdown(markup);
+    syncSourceFromVisual();
+    return;
+  }
+
+  const editor = document.getElementById("kb-editor");
+  editor.setRangeText(markup, editor.selectionStart, editor.selectionEnd, "end");
+  editor.focus();
+  updatePreview();
 }

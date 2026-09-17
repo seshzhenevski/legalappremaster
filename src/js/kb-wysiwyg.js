@@ -23,6 +23,28 @@ const TOOLBAR_ITEMS = [
 ];
 
 /**
+ * Создаёт кнопку вставки ссылки на статью базы.
+ *
+ * У библиотеки есть своя кнопка ссылки, но она спрашивает адрес, а ссылка
+ * на статью хранится идентификатором, который человек знать не обязан —
+ * статью нужно выбирать из списка.
+ */
+function buildArticleLinkButton(onInsertArticleLink) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "toastui-editor-toolbar-icons kb-toolbar-article-link";
+  button.title = "Ссылка на статью базы знаний";
+  button.textContent = "⧉";
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    if (onInsertArticleLink) {
+      onInsertArticleLink();
+    }
+  });
+  return button;
+}
+
+/**
  * Создаёт редактор в указанном контейнере.
  *
  * Принимает элемент-контейнер, начальную разметку, признак тёмной темы и
@@ -32,7 +54,9 @@ const TOOLBAR_ITEMS = [
  * Телеметрия отключена явно: библиотека по умолчанию отправляет наружу имя
  * хоста при каждом запуске, а это внутренний инструмент юридического отдела.
  */
-export function createVisualEditor({ container, markdown, isDark, onChange }) {
+export function createVisualEditor(
+  { container, markdown, isDark, onChange, onInsertArticleLink },
+) {
   const EditorConstructor = window.ToastUIEditor?.default || window.ToastUIEditor;
   if (!EditorConstructor) {
     throw new Error("Редактор не загружен");
@@ -50,7 +74,11 @@ export function createVisualEditor({ container, markdown, isDark, onChange }) {
     usageStatistics: false,
     language: "ru-RU",
     initialValue: markdown || "",
-    toolbarItems: TOOLBAR_ITEMS,
+    toolbarItems: TOOLBAR_ITEMS.concat([[{
+      name: "kbArticleLink",
+      tooltip: "Ссылка на статью базы знаний",
+      el: buildArticleLinkButton(onInsertArticleLink),
+    }]]),
     autofocus: false,
     events: {
       change: () => {
@@ -89,6 +117,16 @@ export function createVisualEditor({ container, markdown, isDark, onChange }) {
       if (root) {
         root.classList.toggle("toastui-editor-dark", Boolean(dark));
       }
+    },
+
+    /**
+     * Вставляет разметку в место курсора.
+     *
+     * Используется для ссылок на статьи: у библиотеки своя кнопка ссылки, но
+     * она спрашивает адрес, а нам нужен выбор статьи из списка базы.
+     */
+    insertMarkdown(markup) {
+      editor.insertText(markup);
     },
 
     /**

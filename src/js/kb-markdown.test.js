@@ -7,10 +7,16 @@ import assert from "node:assert/strict";
 
 import {
   escapeHtml,
+  extractArticleLinks,
   extractHeadings,
   headingAnchorId,
   renderMarkdown,
 } from "./kb-markdown.js";
+
+/** Справочник статей, каким его передаёт вкладка из своей памяти. */
+function registry(entries) {
+  return new Map(entries.map(([id, title]) => [id, { title: title }]));
+}
 
 test("escapeHtml обезвреживает угловые скобки", () => {
   assert.equal(escapeHtml("<b>жирный</b>"), "&lt;b&gt;жирный&lt;/b&gt;");
@@ -148,4 +154,65 @@ test("якоря одинаковых заголовков различаютс�
 test("якорь заголовка совпадает с проставленным при отрисовке", () => {
   const heading = extractHeadings("# Порядок действий")[0];
   assert.ok(renderMarkdown("# Порядок действий").includes(`id="${heading.anchorId}"`));
+});
+
+test("ссылка на статью подставляет её актуальный заголовок", () => {
+  // В тексте осталось прежнее название, статью с тех пор переименовали.
+  const html = renderMarkdown(
+    "см. [Старое название](kb-1a2b3c4d)",
+    registry([["kb-1a2b3c4d", "Новое название"]]),
+  );
+  assert.ok(html.includes(">Новое название</a>"));
+  assert.ok(!html.includes("Старое название"));
+});
+
+test("ссылка на статью помечается для перехода внутри приложения", () => {
+  const html = renderMarkdown(
+    "[текст](kb-1a2b3c4d)", registry([["kb-1a2b3c4d", "Статья"]]),
+  );
+  assert.ok(html.includes('data-kb-article-link="kb-1a2b3c4d"'));
+  assert.ok(!html.includes("data-kb-external"));
+});
+
+test("ссылка на удалённую статью показывается битой, а не ведёт в никуда", () => {
+  const html = renderMarkdown("[Позиция РКН](kb-deadbeef)", registry([]));
+  assert.ok(html.includes("kb-link-broken"));
+  assert.ok(html.includes("Позиция РКН"));
+  assert.ok(!html.includes("<a "));
+});
+
+test("заголовок статьи в ссылке экранируется", () => {
+  const html = renderMarkdown(
+    "[текст](kb-1a2b3c4d)", registry([["kb-1a2b3c4d", "<script>alert(1)</script>"]]),
+  );
+  assert.ok(!html.includes("<script"));
+});
+
+test("внешние ссылки не путаются со ссылками на статьи", () => {
+  const html = renderMarkdown("[сайт](https://rkn.gov.ru)", registry([]));
+  assert.ok(html.includes("data-kb-external"));
+  assert.ok(!html.includes("kb-link-broken"));
+});
+
+test("ссылка на статью работает без справочника", () => {
+  // Предпросмотр в редакторе может отрисовываться до загрузки базы.
+  const html = renderMarkdown("[текст](kb-1a2b3c4d)");
+  assert.ok(html.includes("kb-link-broken"));
+});
+
+test("extractArticleLinks собирает идентификаторы из текста", () => {
+  const links = extractArticleLinks(
+    "начало [первая](kb-11111111) середина [вторая](kb-22222222) конец",
+  );
+  assert.deepEqual([...links].sort(), ["kb-11111111", "kb-22222222"]);
+});
+
+test("extractArticleLinks не считает внешние ссылки", () => {
+  const links = extractArticleLinks("[сайт](https://example.com)");
+  assert.equal(links.size, 0);
+});
+
+test("extractArticleLinks не повторяет один идентификатор дважды", () => {
+  const links = extractArticleLinks("[раз](kb-11111111) и [два](kb-11111111)");
+  assert.equal(links.size, 1);
 });

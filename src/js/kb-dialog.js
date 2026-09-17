@@ -166,13 +166,13 @@ export async function askText(options) {
 }
 
 /**
- * Предлагает выбрать раздел базы знаний из списка.
+ * Предлагает выбрать одно значение из списка.
  *
- * Принимает заголовок и список разделов (относительный путь и подпись).
- * Возвращает выбранный относительный путь либо null. Список, а не поле
- * ввода: путь раздела печатать руками — верный способ ошибиться.
+ * Принимает заголовок и записи вида {value, label, hint}. Возвращает
+ * выбранное значение либо null. Список, а не поле ввода: и путь раздела,
+ * и идентификатор статьи печатать руками — верный способ ошибиться.
  */
-export function askFolderChoice(title, folders) {
+export function askChoice(title, items) {
   const elements = ensureDialogElements();
 
   elements.title.textContent = title;
@@ -191,15 +191,27 @@ export function askFolderChoice(title, folders) {
   list.classList.remove("hidden");
   list.innerHTML = "";
 
-  folders.forEach((folder) => {
+  items.forEach((item) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "kb-modal-list-item";
-    button.textContent = folder.label;
+
+    const label = document.createElement("span");
+    label.className = "kb-modal-list-label";
+    label.textContent = item.label;
+    button.appendChild(label);
+
+    if (item.hint) {
+      const hint = document.createElement("span");
+      hint.className = "kb-modal-list-hint";
+      hint.textContent = item.hint;
+      button.appendChild(hint);
+    }
+
     button.addEventListener("click", () => {
       list.classList.add("hidden");
       elements.confirmButton.classList.remove("hidden");
-      finish(folder.relativePath);
+      finish(item.value);
     });
     list.appendChild(button);
   });
