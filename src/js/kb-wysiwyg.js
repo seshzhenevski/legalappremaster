@@ -33,7 +33,8 @@ function buildArticleLinkButton(onInsertArticleLink) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "toastui-editor-toolbar-icons kb-toolbar-article-link";
-  button.title = "Ссылка на статью базы знаний";
+  // Подсказку рисует сама библиотека по полю tooltip элемента панели;
+  // собственный title дал бы вторую, системную, поверх неё.
   button.textContent = "⧉";
   button.addEventListener("click", (event) => {
     event.preventDefault();
@@ -120,13 +121,15 @@ export function createVisualEditor(
     },
 
     /**
-     * Вставляет разметку в место курсора.
+     * Вставляет ссылку на статью в место курсора.
      *
-     * Используется для ссылок на статьи: у библиотеки своя кнопка ссылки, но
-     * она спрашивает адрес, а нам нужен выбор статьи из списка базы.
+     * Принимает идентификатор статьи и подпись. Используется штатная команда
+     * редактора, а не вставка текста: вставленный текст библиотека считает
+     * обычными символами и экранирует служебные знаки, из-за чего в статье
+     * оказывалось «\[Заголовок\]\(kb-...\)» вместо рабочей ссылки.
      */
-    insertMarkdown(markup) {
-      editor.insertText(markup);
+    insertArticleLink(articleId, label) {
+      editor.exec("addLink", { linkUrl: articleId, linkText: label });
     },
 
     /**

@@ -1864,11 +1864,11 @@ function openArticleById(articleId) {
 }
 
 /**
- * Предлагает выбрать статью и возвращает разметку ссылки на неё.
+ * Предлагает выбрать статью и возвращает данные ссылки на неё.
  *
- * Возвращает строку вида [Заголовок](kb-1a2b3c4d) либо null. Заголовок
- * пишется в текст, чтобы файл оставался понятным и в проводнике, но при
- * отображении подставляется актуальный — на случай переименования.
+ * Возвращает {articleId, label} либо null. Заголовок пишется в текст, чтобы
+ * файл оставался понятным и в проводнике, но при отображении подставляется
+ * актуальный — на случай переименования.
  */
 async function buildArticleLinkMarkup() {
   const items = knowledgeBase.articles
@@ -1889,25 +1889,26 @@ async function buildArticleLinkMarkup() {
     return null;
   }
   const target = knowledgeBase.articlesById.get(chosenId.toLowerCase());
-  return `[${target.title}](${chosenId})`;
+  return { articleId: chosenId, label: target.title };
 }
 
 /**
  * Вставляет ссылку на статью в тот редактор, который сейчас открыт.
  */
 async function handleInsertArticleLink() {
-  const markup = await buildArticleLinkMarkup();
-  if (!markup) {
+  const link = await buildArticleLinkMarkup();
+  if (!link) {
     return;
   }
 
   if (editorMode === "visual" && visualEditor) {
-    visualEditor.insertMarkdown(markup);
+    visualEditor.insertArticleLink(link.articleId, link.label);
     syncSourceFromVisual();
     return;
   }
 
   const editor = document.getElementById("kb-editor");
+  const markup = `[${link.label}](${link.articleId})`;
   editor.setRangeText(markup, editor.selectionStart, editor.selectionEnd, "end");
   editor.focus();
   updatePreview();

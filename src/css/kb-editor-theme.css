@@ -68,12 +68,22 @@
   color: var(--accent) !important;
 }
 
-/* Наша кнопка в панели редактора: библиотека рисует свои значки спрайтом,
-   у этой значок текстовый, поэтому фон спрайта нужно убрать. */
+/* Наша кнопка в панели редактора. Библиотека рисует свои значки спрайтом и
+   задаёт им размеры через фон, а у этой значок текстовый — поэтому фон
+   убирается, а размеры и выравнивание задаются явно, иначе кнопка съезжает
+   относительно соседних. */
 .kb-toolbar-article-link {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: 7px 5px;
+  padding: 0;
   background-image: none !important;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1;
+  vertical-align: top;
   color: #555;
 }
 .toastui-editor-dark .kb-toolbar-article-link {
