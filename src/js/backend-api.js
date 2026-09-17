@@ -376,3 +376,28 @@ export async function requestKnowledgeBaseFolderDelete(rootPath, folderPath) {
   });
 }
 
+/**
+ * Вкладывает документ в статью базы знаний.
+ *
+ * Принимает корень базы, идентификатор статьи и путь к исходному файлу.
+ * Файл копируется в служебную папку рядом с базой; возвращается цель для
+ * ссылки и имя файла.
+ */
+export async function requestKnowledgeBaseAttach(rootPath, articleId, sourcePath) {
+  return callBackendMethod("attach_kb_document", {
+    root_path: rootPath, article_id: articleId, source_path: sourcePath,
+  });
+}
+
+/**
+ * Проверяет, доступен ли файл по ссылке.
+ *
+ * Нужна перед открытием: база была прочитана раньше, и документ могли
+ * удалить или отключить сетевой диск.
+ */
+export async function requestKnowledgeBaseDocumentCheck(rootPath, target) {
+  return callBackendMethod("check_kb_document", {
+    root_path: rootPath, target: target,
+  });
+}
+

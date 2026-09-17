@@ -83,3 +83,25 @@ export async function selectSaveFile(defaultFileName, extensionName, extensions)
   });
   return selectedPath;
 }
+
+/**
+ * Открывает диалог выбора документа для базы знаний.
+ *
+ * Показывает системный диалог с фильтром по типам документов, которые
+ * приложению разрешено открывать. Возвращает путь или null при отмене.
+ */
+export async function selectDocumentFile() {
+  const { open } = window.__TAURI__.dialog;
+  return open({
+    multiple: false,
+    directory: false,
+    filters: [{
+      name: "Документы",
+      extensions: ["doc", "docx", "rtf", "odt", "txt", "pdf",
+                   "xls", "xlsx", "csv", "ods", "ppt", "pptx",
+                   "jpg", "jpeg", "png", "gif", "bmp", "tif", "tiff",
+                   "msg", "eml"],
+    }],
+  });
+}
+

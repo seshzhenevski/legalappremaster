@@ -20,12 +20,15 @@ from logic.knowledge_base import (
     MAX_FILENAME_LENGTH,
     MAX_VERSIONS_PER_ARTICLE,
     acquire_lock,
+    attach_document,
+    check_document,
     check_lock,
     content_fingerprint,
     create_article,
     create_folder,
     delete_article,
     delete_folder,
+    extract_document_links,
     generate_article_id,
     list_trash,
     list_tree,
@@ -728,6 +731,141 @@ class SaveWithFilenameSyncTests(unittest.TestCase):
 
         self.assertNotEqual(result["relative_path"], "Раздел/Занятое имя.md")
         self.assertEqual(len(list((self.root / "Раздел").glob("*.md"))), 2)
+
+
+class DocumentLinkTests(unittest.TestCase):
+    """
+    Ссылки на документы: вложения и файлы в сетевой папке.
+
+    Оба вида нужны по ТЗ: вложение живёт вместе со статьёй, ссылка на
+    сетевую папку оставляет документ там, где его ведут.
+    """
+
+    def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary_directory.name)
+        self.summary = create_article(self.root, "Раздел", "Инструкция")
+
+        self.source_directory = tempfile.TemporaryDirectory()
+        self.source_file = Path(self.source_directory.name) / "Договор поставки.docx"
+        self.source_file.write_bytes(b"docx")
+
+    def tearDown(self):
+        self.temporary_directory.cleanup()
+        self.source_directory.cleanup()
+
+    def test_attachment_lands_in_article_folder(self):
+        result = attach_document(self.root, self.summary["id"], self.source_file)
+
+        self.assertEqual(result["name"], "Договор поставки.docx")
+        self.assertTrue(
+            (self.root / ".assets" / self.summary["id"] / result["name"]).exists()
+        )
+
+    def test_target_is_percent_encoded(self):
+        # Пробел в адресе разрывает разметку ссылки, а имена документов почти
+        # всегда с пробелами.
+        result = attach_document(self.root, self.summary["id"], self.source_file)
+
+        self.assertNotIn(" ", result["target"])
+        self.assertIn("%20", result["target"])
+        self.assertTrue(result["target"].startswith(f".assets/{self.summary['id']}/"))
+
+    def test_original_file_stays_where_it_was(self):
+        # Копируем, а не переносим: исчезновение оригинала стало бы сюрпризом.
+        attach_document(self.root, self.summary["id"], self.source_file)
+        self.assertTrue(self.source_file.exists())
+
+    def test_attachment_target_is_relative(self):
+        # У коллеги сетевая папка под другой буквой диска.
+        result = attach_document(self.root, self.summary["id"], self.source_file)
+        self.assertNotIn(":", result["target"])
+        self.assertFalse(result["target"].startswith("/"))
+
+    def test_same_name_does_not_overwrite_previous_attachment(self):
+        first = attach_document(self.root, self.summary["id"], self.source_file)
+        second = attach_document(self.root, self.summary["id"], self.source_file)
+
+        self.assertNotEqual(first["target"], second["target"])
+        folder = self.root / ".assets" / self.summary["id"]
+        self.assertEqual(len(list(folder.iterdir())), 2)
+
+    def test_attachment_without_article_id_is_rejected(self):
+        with self.assertRaises(ValueError):
+            attach_document(self.root, "", self.source_file)
+
+    def test_missing_source_is_rejected(self):
+        with self.assertRaises(ValueError):
+            attach_document(self.root, self.summary["id"], self.source_file.parent / "нет.docx")
+
+    def test_attached_document_is_available(self):
+        result = attach_document(self.root, self.summary["id"], self.source_file)
+        checked = check_document(self.root, result["target"])
+
+        self.assertTrue(checked["available"])
+        self.assertEqual(checked["name"], "Договор поставки.docx")
+
+    def test_deleted_attachment_is_reported_unavailable(self):
+        result = attach_document(self.root, self.summary["id"], self.source_file)
+        (self.root / ".assets" / self.summary["id"] / result["name"]).unlink()
+
+        checked = check_document(self.root, result["target"])
+        self.assertFalse(checked["available"])
+        self.assertEqual(checked["reason"], "Файл не найден")
+
+    def test_external_file_link_is_checked_by_absolute_path(self):
+        target = f"file:{self.source_file}"
+        checked = check_document(self.root, target)
+
+        self.assertTrue(checked["available"])
+        self.assertEqual(checked["name"], "Договор поставки.docx")
+
+    def test_missing_external_file_is_reported_unavailable(self):
+        checked = check_document(self.root, "file:Z:/нет такой папки/договор.docx")
+        self.assertFalse(checked["available"])
+
+    def test_attachment_cannot_point_outside_the_base(self):
+        checked = check_document(self.root, ".assets/../../чужое.docx")
+        self.assertFalse(checked["available"])
+        self.assertEqual(checked["reason"], "Путь вне базы знаний")
+
+    def test_links_are_extracted_from_article_text(self):
+        body = (
+            "См. [договор](.assets/kb-1/Договор.docx) и "
+            "[регламент](file:Z:/Общая/Регламент.pdf). "
+            "Ещё [статья](kb-2a2b2c2d) и [сайт](https://example.com)."
+        )
+        links = extract_document_links(body)
+        self.assertEqual(links, [
+            ".assets/kb-1/Договор.docx", "file:Z:/Общая/Регламент.pdf",
+        ])
+
+    def test_repeated_link_is_listed_once(self):
+        body = "[раз](.assets/kb-1/Д.docx) и [два](.assets/kb-1/Д.docx)"
+        self.assertEqual(len(extract_document_links(body)), 1)
+
+    def test_second_attachment_name_has_no_parentheses(self):
+        # Круглые скобки в имени закрыли бы адрес ссылки.
+        attach_document(self.root, self.summary["id"], self.source_file)
+        second = attach_document(self.root, self.summary["id"], self.source_file)
+
+        self.assertNotIn("(", second["name"])
+        self.assertIn("-2", second["name"])
+
+    def test_bulk_load_reports_document_availability(self):
+        result = attach_document(self.root, self.summary["id"], self.source_file)
+        path = self.root / self.summary["relative_path"]
+        loaded_article = read_article(path)
+        save_article(
+            self.root, path, loaded_article["properties"],
+            f"См. [договор]({result['target']}) и [пропавший](.assets/kb-1/Нет.docx).",
+        )
+
+        loaded = load_knowledge_base(self.root)
+        by_target = {item["target"]: item for item in loaded["documents"]}
+
+        self.assertTrue(by_target[result["target"]]["available"])
+        self.assertFalse(by_target[".assets/kb-1/Нет.docx"]["available"])
 
 
 class RestoreVersionTests(unittest.TestCase):

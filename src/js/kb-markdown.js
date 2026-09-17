@@ -26,6 +26,24 @@ const TABLE_SEPARATOR_PATTERN = /^\|?[\s:|-]+\|[\s:|-]*$/;
 // продолжать работать.
 const ARTICLE_LINK_PATTERN = /^kb-[0-9a-z]{4,}$/i;
 
+// Ссылки на документы. Вложение лежит в служебной папке базы и записывается
+// относительным путём; ссылка на файл в сетевой папке помечается схемой,
+// иначе её не отличить от вложения. Цель хранится в процентном кодировании:
+// пробел в адресе разрывает разметку, а имена документов почти всегда с
+// пробелами.
+const ATTACHMENT_PREFIX = ".assets/";
+const EXTERNAL_FILE_PREFIX = "file:";
+
+// Значок по расширению: по нему видно, чем файл откроется, ещё до клика.
+const DOCUMENT_ICONS = {
+  doc: "📝", docx: "📝", rtf: "📝", odt: "📝", txt: "📝",
+  xls: "📊", xlsx: "📊", csv: "📊", ods: "📊",
+  ppt: "📽", pptx: "📽",
+  pdf: "📕",
+  jpg: "🖼", jpeg: "🖼", png: "🖼", gif: "🖼", bmp: "🖼", tif: "🖼", tiff: "🖼",
+  msg: "✉", eml: "✉",
+};
+
 /**
  * Экранирует символы, имеющие в HTML особое значение.
  *
@@ -97,7 +115,7 @@ export function extractHeadings(markdownText) {
  * обрабатываются первыми и выводятся из-под остального форматирования —
  * иначе звёздочки внутри кода превратились бы в курсив.
  */
-function renderInline(escapedText, articlesById) {
+function renderInline(escapedText, articlesById, documents) {
   // Заполнитель из области частного использования: обычный текст статьи
   // такого символа не содержит, поэтому спрятанный код не спутается с
   // числами. Записан escape-последовательностью — сам символ невидим и в
@@ -110,7 +128,7 @@ function renderInline(escapedText, articlesById) {
 
   text = text.replace(
     /\[([^\]]+)\]\(([^)\s]+)\)/g,
-    (whole, label, url) => renderLink(label, url, articlesById),
+    (whole, label, url) => renderLink(label, url, articlesById, documents),
   );
   text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   text = text.replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>");
@@ -130,9 +148,12 @@ function renderInline(escapedText, articlesById) {
  * вроде javascript: выполнили бы код в окне приложения, а ссылки на статьи
  * и документы появятся отдельными видами и через другую разметку.
  */
-function renderLink(label, url, articlesById) {
+function renderLink(label, url, articlesById, documents) {
   if (ARTICLE_LINK_PATTERN.test(url)) {
     return renderArticleLink(label, url, articlesById);
+  }
+  if (url.startsWith(ATTACHMENT_PREFIX) || url.startsWith(EXTERNAL_FILE_PREFIX)) {
+    return renderDocumentLink(label, url, documents);
   }
   if (!/^https?:\/\//i.test(url)) {
     return label;
@@ -188,13 +209,63 @@ export function extractArticleLinks(markdownText) {
 }
 
 /**
+ * Отрисовывает ссылку на документ.
+ *
+ * Принимает подпись, цель и справочник доступности файлов. Показывает
+ * значок по типу файла и имя, как требует ТЗ. Недоступный файл (удалён, нет
+ * прав, сетевой диск отключён) помечается, а не открывает пустоту: человек
+ * должен видеть, что документа больше нет, до того как нажмёт.
+ */
+function renderDocumentLink(label, target, documents) {
+  const state = documents ? documents.get(target) : null;
+  const name = decodeDocumentName(target);
+  const icon = DOCUMENT_ICONS[fileExtension(name)] || "📎";
+
+  if (state && !state.available) {
+    const reason = escapeHtml(state.reason || "Файл недоступен");
+    return `<span class="kb-doc-link kb-doc-broken" title="${reason}">`
+      + `${icon} ${label}</span>`;
+  }
+  const hint = escapeHtml(name);
+  return `<a class="kb-doc-link" data-kb-document="${target}" title="${hint}" `
+    + `href="#">${icon} ${label}</a>`;
+}
+
+/**
+ * Возвращает имя файла из цели ссылки.
+ *
+ * Цель хранится в процентном кодировании, поэтому её нужно раскодировать —
+ * иначе пользователь увидит «%D0%94%D0%BE...» вместо названия документа.
+ */
+function decodeDocumentName(target) {
+  const withoutPrefix = target.startsWith(EXTERNAL_FILE_PREFIX)
+    ? target.slice(EXTERNAL_FILE_PREFIX.length)
+    : target;
+  let readable = withoutPrefix;
+  try {
+    readable = decodeURIComponent(withoutPrefix);
+  } catch {
+    // Испорченное кодирование — показываем как есть, это лучше ошибки.
+  }
+  return readable.split(/[\/]/).pop() || readable;
+}
+
+/**
+ * Возвращает расширение файла в нижнем регистре.
+ */
+function fileExtension(name) {
+  const dot = name.lastIndexOf(".");
+  return dot === -1 ? "" : name.slice(dot + 1).toLowerCase();
+}
+
+/**
  * Отрисовывает статью из Markdown в HTML.
  *
  * Принимает текст статьи. Возвращает строку разметки, готовую для вставки
  * в контейнер статьи. Неизвестная разметка остаётся обычным текстом —
  * статья должна открыться в любом случае, пусть и без оформления.
  */
-export function renderMarkdown(markdownText, articlesById) {
+export function renderMarkdown(markdownText, articlesById, documents) {
   const lines = String(markdownText ?? "").split(/\r?\n/);
   const htmlParts = [];
 
@@ -209,7 +280,7 @@ export function renderMarkdown(markdownText, articlesById) {
 
   function flushParagraph() {
     if (paragraphLines.length) {
-      htmlParts.push(`<p>${renderInline(paragraphLines.join("<br>"), articlesById)}</p>`);
+      htmlParts.push(`<p>${renderInline(paragraphLines.join("<br>"), articlesById, documents)}</p>`);
       paragraphLines = [];
     }
   }
@@ -225,7 +296,7 @@ export function renderMarkdown(markdownText, articlesById) {
   function flushQuote() {
     if (quoteLines.length) {
       htmlParts.push(
-        `<blockquote class="kb-quote">${renderInline(quoteLines.join("<br>"), articlesById)}</blockquote>`,
+        `<blockquote class="kb-quote">${renderInline(quoteLines.join("<br>"), articlesById, documents)}</blockquote>`,
       );
       quoteLines = [];
     }
@@ -237,10 +308,10 @@ export function renderMarkdown(markdownText, articlesById) {
     }
     const [headerRow, ...bodyRows] = tableRows;
     const head = headerRow
-      .map((cell) => `<th>${renderInline(cell, articlesById)}</th>`)
+      .map((cell) => `<th>${renderInline(cell, articlesById, documents)}</th>`)
       .join("");
     const body = bodyRows
-      .map((row) => `<tr>${row.map((cell) => `<td>${renderInline(cell, articlesById)}</td>`).join("")}</tr>`)
+      .map((row) => `<tr>${row.map((cell) => `<td>${renderInline(cell, articlesById, documents)}</td>`).join("")}</tr>`)
       .join("");
     htmlParts.push(
       `<div class="kb-table-scroll"><table class="kb-table">` +
@@ -295,7 +366,7 @@ export function renderMarkdown(markdownText, articlesById) {
       headingIndex += 1;
       htmlParts.push(
         `<h${level} id="${anchorId}" class="kb-heading kb-heading-${level}">` +
-        `${renderInline(headingText, articlesById)}</h${level}>`,
+        `${renderInline(headingText, articlesById, documents)}</h${level}>`,
       );
       continue;
     }
@@ -313,7 +384,7 @@ export function renderMarkdown(markdownText, articlesById) {
       listItems.push(
         `<li class="kb-check${isChecked ? " kb-check-done" : ""}">` +
         `<span class="kb-check-box" aria-hidden="true">${isChecked ? "✓" : ""}</span>` +
-        `<span>${renderInline(escapeHtml(checklistMatch[2]), articlesById)}</span></li>`,
+        `<span>${renderInline(escapeHtml(checklistMatch[2]), articlesById, documents)}</span></li>`,
       );
       continue;
     }
@@ -330,7 +401,7 @@ export function renderMarkdown(markdownText, articlesById) {
         listTag = wantedTag;
       }
       const itemText = (unorderedMatch || orderedMatch)[1];
-      listItems.push(`<li>${renderInline(escapeHtml(itemText), articlesById)}</li>`);
+      listItems.push(`<li>${renderInline(escapeHtml(itemText), articlesById, documents)}</li>`);
       continue;
     }
 

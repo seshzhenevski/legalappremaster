@@ -12,7 +12,9 @@
 
 import {
   requestKnowledgeBase,
+  requestKnowledgeBaseAttach,
   requestKnowledgeBaseCreate,
+  requestKnowledgeBaseDocumentCheck,
   requestKnowledgeBaseDelete,
   requestKnowledgeBaseFolderCreate,
   requestKnowledgeBaseFolderDelete,
@@ -29,7 +31,7 @@ import {
   requestKnowledgeBaseVersions,
 } from "./backend-api.js";
 import { askChoice, askConfirm, askText } from "./kb-dialog.js";
-import { selectDirectory } from "./file-dialogs.js";
+import { selectDirectory, selectDocumentFile } from "./file-dialogs.js";
 import { loadKnowledgeBaseRoot, saveKnowledgeBaseRoot } from "./kb-settings-store.js";
 import {
   extractArticleLinks,
@@ -79,6 +81,7 @@ const knowledgeBase = {
   articlesByPath: new Map(),
   articlesById: new Map(),
   backlinks: new Map(),
+  documents: new Map(),
   tree: null,
   isLoaded: false,
 };
@@ -289,6 +292,9 @@ async function reloadKnowledgeBase(announceResult) {
     knowledgeBase.articles = loaded.articles;
     knowledgeBase.articlesByPath = new Map(
       loaded.articles.map((article) => [article.relative_path, article]),
+    );
+    knowledgeBase.documents = new Map(
+      (loaded.documents || []).map((item) => [item.target, item]),
     );
     knowledgeBase.isLoaded = true;
     rebuildLinkIndex();
@@ -570,7 +576,7 @@ function showArticle(relativePath) {
   document.getElementById("kb-article-icon").textContent = article.icon || "📄";
   document.getElementById("kb-article-title").textContent = article.title;
   document.getElementById("kb-article-body").innerHTML =
-    renderMarkdown(article.body, knowledgeBase.articlesById);
+    renderMarkdown(article.body, knowledgeBase.articlesById, knowledgeBase.documents);
 
   renderArticleProperties(article);
   renderTableOfContents(article.body);
@@ -677,6 +683,13 @@ function showEmptyArticle() {
  * открываются снаружи — во внешнем браузере, как того требует ТЗ.
  */
 async function handleArticleClick(event) {
+  const documentLink = event.target.closest("[data-kb-document]");
+  if (documentLink) {
+    event.preventDefault();
+    await openDocument(documentLink.dataset.kbDocument);
+    return;
+  }
+
   const articleLink = event.target.closest("[data-kb-article-link]");
   if (articleLink) {
     event.preventDefault();
@@ -778,7 +791,8 @@ function applyFormat(format) {
  */
 function updatePreview() {
   document.getElementById("kb-preview").innerHTML = renderMarkdown(
-    document.getElementById("kb-editor").value, knowledgeBase.articlesById,
+    document.getElementById("kb-editor").value,
+    knowledgeBase.articlesById, knowledgeBase.documents,
   );
 }
 
@@ -1008,7 +1022,7 @@ async function handleNewArticleClick() {
  */
 function showConflict(result) {
   document.getElementById("kb-conflict-their-body").innerHTML =
-    renderMarkdown(result.their_body, knowledgeBase.articlesById);
+    renderMarkdown(result.their_body, knowledgeBase.articlesById, knowledgeBase.documents);
   showOverlay("kb-conflict-overlay");
 }
 
@@ -1143,7 +1157,7 @@ async function showVersion(article, version) {
       knowledgeBase.rootPath, article.id, version.name,
     );
     const preview = document.getElementById("kb-version-preview");
-    preview.innerHTML = renderMarkdown(snapshot.body, knowledgeBase.articlesById);
+    preview.innerHTML = renderMarkdown(snapshot.body, knowledgeBase.articlesById, knowledgeBase.documents);
     preview.classList.remove("hidden");
   } catch (error) {
     showToast(`Не удалось прочитать версию: ${describeError(error)}`);
@@ -1878,14 +1892,22 @@ async function handleInsertLink() {
       hint: "Переживёт переименование и перенос статьи" },
     { value: "url", label: "На сайт",
       hint: "Откроется во внешнем браузере" },
+    { value: "attachment", label: "Вложить документ в статью",
+      hint: "Файл скопируется в базу и будет доступен всем" },
+    { value: "external-file", label: "На файл в сетевой папке",
+      hint: "Файл останется там, где лежит" },
   ]);
   if (!kind) {
     return;
   }
 
-  const link = kind === "article"
-    ? await chooseArticleLink(selection.text)
-    : await chooseExternalLink(selection.text);
+  const chooseByKind = {
+    article: chooseArticleLink,
+    url: chooseExternalLink,
+    attachment: chooseAttachment,
+    "external-file": chooseExternalDocument,
+  };
+  const link = await chooseByKind[kind](selection.text);
   if (!link) {
     return;
   }
@@ -1980,4 +2002,114 @@ function insertLinkIntoEditor(selection, url, label) {
   editor.setRangeText(markup, selection.start, selection.end, "end");
   editor.focus();
   updatePreview();
+}
+
+// ── Документы ────────────────────────────────────────────────────────────────
+
+/**
+ * Вкладывает документ в статью и возвращает данные ссылки.
+ *
+ * Принимает выделенный текст. Файл копируется в служебную папку рядом с
+ * базой: там он доступен всем пользователям и не зависит от того, что лежит
+ * на диске конкретного человека.
+ */
+async function chooseAttachment(selectedText) {
+  if (!editState.articleId) {
+    showToast("Сначала сохраните статью — вложению нужен её идентификатор");
+    return null;
+  }
+
+  const sourcePath = await selectDocumentFile();
+  if (!sourcePath) {
+    return null;
+  }
+
+  setBusy(true);
+  try {
+    const attached = await requestKnowledgeBaseAttach(
+      knowledgeBase.rootPath, editState.articleId, sourcePath,
+    );
+    return { url: attached.target, label: selectedText || attached.name };
+  } catch (error) {
+    showToast(`Не удалось вложить документ: ${describeError(error)}`);
+    return null;
+  } finally {
+    setBusy(false);
+  }
+}
+
+/**
+ * Возвращает ссылку на файл, оставленный в сетевой папке.
+ *
+ * Принимает выделенный текст. Файл не копируется: он ведётся в другом месте
+ * и должен там остаться. Путь кодируется, потому что пробел в адресе
+ * разрывает разметку ссылки, а имена документов почти всегда с пробелами.
+ */
+async function chooseExternalDocument(selectedText) {
+  const sourcePath = await selectDocumentFile();
+  if (!sourcePath) {
+    return null;
+  }
+  const name = sourcePath.split(/[\\/]/).pop();
+  return {
+    url: `file:${encodeURI(sourcePath.replace(/\\/g, "/"))}`,
+    label: selectedText || name,
+  };
+}
+
+/**
+ * Открывает документ в приложении по умолчанию.
+ *
+ * Принимает цель ссылки. Перед открытием файл проверяется заново: база была
+ * прочитана раньше, и с тех пор документ могли удалить или отключить диск.
+ * Само приложение документы не показывает — этим занимаются Word и Acrobat.
+ */
+async function openDocument(target) {
+  setBusy(true);
+  try {
+    const checked = await requestKnowledgeBaseDocumentCheck(
+      knowledgeBase.rootPath, target,
+    );
+    if (!checked.available) {
+      showToast(`${checked.name}: ${checked.reason}`);
+      markDocumentUnavailable(target, checked);
+      return;
+    }
+
+    const { open } = window.__TAURI__.shell;
+    await open(absoluteDocumentPath(target));
+  } catch (error) {
+    showToast(`Не удалось открыть документ: ${describeError(error)}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+/**
+ * Собирает полный путь к документу для открытия системой.
+ *
+ * Принимает цель ссылки. Вложение хранится относительно корня базы, поэтому
+ * путь достраивается: у каждого пользователя сетевая папка подключена под
+ * своей буквой диска.
+ */
+function absoluteDocumentPath(target) {
+  if (target.startsWith("file:")) {
+    return decodeURIComponent(target.slice("file:".length));
+  }
+  const relative = decodeURIComponent(target);
+  const root = knowledgeBase.rootPath.replace(/[\\/]+$/, "");
+  return `${root}\\${relative.replace(/\//g, "\\")}`;
+}
+
+/**
+ * Помечает документ недоступным и перерисовывает статью.
+ *
+ * Вызывается, когда файл пропал уже после загрузки базы: пометка появляется
+ * сразу, не дожидаясь следующего обновления.
+ */
+function markDocumentUnavailable(target, checked) {
+  knowledgeBase.documents.set(target, checked);
+  if (selectedRelativePath) {
+    showArticle(selectedRelativePath);
+  }
 }

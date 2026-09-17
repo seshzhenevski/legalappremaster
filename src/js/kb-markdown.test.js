@@ -225,3 +225,74 @@ test("extractArticleLinks не повторяет один идентифика�
   const links = extractArticleLinks("[раз](kb-11111111) и [два](kb-11111111)");
   assert.equal(links.size, 1);
 });
+
+/** Справочник доступности документов, каким его отдаёт бэкенд. */
+function documents(entries) {
+  return new Map(entries.map(([target, available, reason]) =>
+    [target, { available: available, reason: reason || "" }]));
+}
+
+test("вложение отрисовывается ссылкой со значком по типу файла", () => {
+  const html = renderMarkdown(
+    "см. [договор](.assets/kb-1/Договор%20поставки.docx)",
+    null, documents([[".assets/kb-1/Договор%20поставки.docx", true]]),
+  );
+  assert.ok(html.includes('data-kb-document=".assets/kb-1/Договор%20поставки.docx"'));
+  assert.ok(html.includes("📝"));
+  assert.ok(html.includes("договор"));
+});
+
+test("имя документа в подсказке раскодировано", () => {
+  const html = renderMarkdown(
+    "[договор](.assets/kb-1/Договор%20поставки.docx)",
+    null, documents([[".assets/kb-1/Договор%20поставки.docx", true]]),
+  );
+  assert.ok(html.includes('title="Договор поставки.docx"'));
+  // В самом адресе ссылки кодирование остаётся — оно там и нужно.
+  assert.ok(html.includes('data-kb-document=".assets/kb-1/Договор%20поставки.docx"'));
+});
+
+test("недоступный документ помечается и не открывается", () => {
+  const html = renderMarkdown(
+    "[договор](.assets/kb-1/Нет.docx)",
+    null, documents([[".assets/kb-1/Нет.docx", false, "Файл не найден"]]),
+  );
+  assert.ok(html.includes("kb-doc-broken"));
+  assert.ok(html.includes('title="Файл не найден"'));
+  assert.ok(!html.includes("data-kb-document"));
+});
+
+test("ссылка на файл в сетевой папке узнаётся по схеме", () => {
+  const html = renderMarkdown(
+    "[регламент](file:Z:/Общая/Регламент.pdf)",
+    null, documents([["file:Z:/Общая/Регламент.pdf", true]]),
+  );
+  assert.ok(html.includes("data-kb-document"));
+  assert.ok(html.includes("📕"));
+  assert.ok(html.includes('title="Регламент.pdf"'));
+});
+
+test("неизвестное расширение получает общий значок", () => {
+  const html = renderMarkdown(
+    "[файл](.assets/kb-1/данные.xyz)", null,
+    documents([[".assets/kb-1/данные.xyz", true]]),
+  );
+  assert.ok(html.includes("📎"));
+});
+
+test("документ без справочника считается доступным", () => {
+  // Предпросмотр в редакторе отрисовывается до проверки файлов.
+  const html = renderMarkdown("[договор](.assets/kb-1/Д.docx)");
+  assert.ok(html.includes("data-kb-document"));
+});
+
+test("документы не путаются со ссылками на статьи и сайты", () => {
+  const html = renderMarkdown(
+    "[статья](kb-1a2b3c4d) [сайт](https://example.com) [файл](.assets/kb-1/Д.docx)",
+    registry([["kb-1a2b3c4d", "Статья"]]), documents([]),
+  );
+  assert.ok(html.includes("data-kb-article-link"));
+  assert.ok(html.includes("data-kb-external"));
+  assert.ok(html.includes("data-kb-document"));
+});
+

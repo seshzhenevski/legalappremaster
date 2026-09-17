@@ -18,11 +18,13 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List
+from urllib.parse import quote, unquote
 
 import yaml
 
@@ -426,6 +428,7 @@ def load_knowledge_base(root_path: Path) -> Dict[str, Any]:
         "root": str(canonical_root),
         "tree": tree,
         "articles": collected_articles,
+        "documents": collect_document_availability(canonical_root, collected_articles),
     }
 
 
@@ -1127,3 +1130,166 @@ def purge_trash_entry(root_path: Path, entry_id: str) -> None:
     trash_path = root_path / TRASH_DIRNAME
     safe_child_path(trash_path, f"{entry_id}{ARTICLE_SUFFIX}").unlink(missing_ok=True)
     safe_child_path(trash_path, f"{entry_id}.json").unlink(missing_ok=True)
+
+
+# ── Ссылки на документы ──────────────────────────────────────────────────────
+# Два вида, оба нужны по ТЗ. Вложение — файл копируется в служебную папку
+# рядом с базой и живёт вместе со статьёй. Ссылка на сетевую папку — путь к
+# уже существующему файлу, который ведётся в другом месте и должен там
+# остаться.
+
+# Вложение записывается относительным путём от корня базы. Абсолютный путь
+# вида «Z:\...» у коллеги с другой буквой диска не открылся бы.
+ATTACHMENT_PREFIX = f"{ASSETS_DIRNAME}/"
+
+# Ссылка на файл вне базы помечается схемой, иначе её не отличить от
+# вложения и от обычного текста.
+EXTERNAL_FILE_PREFIX = "file:"
+
+# Разметка ссылки в тексте статьи: [подпись](цель).
+DOCUMENT_LINK_PATTERN = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
+
+# Цель ссылки хранится в процентном кодировании. Причина проверена на живом
+# редакторе: пробел в адресе разрывает разметку, ссылка перестаёт быть
+# ссылкой, а имена документов почти всегда с пробелами («Договор поставки»).
+# Обе рабочие записи — и угловые скобки, и проценты — редактор всё равно
+# приводит к процентной, поэтому хранить сразу так означает, что файл не
+# будет переписываться при каждом открытии статьи в визуальном режиме.
+
+
+def is_document_target(target: str) -> bool:
+    """
+    Отвечает, ведёт ли ссылка на документ, а не на статью или сайт.
+
+    Принимает цель ссылки из текста статьи.
+    """
+    return target.startswith(ATTACHMENT_PREFIX) or target.startswith(EXTERNAL_FILE_PREFIX)
+
+
+def extract_document_links(body: str) -> List[str]:
+    """
+    Перечисляет цели ссылок на документы в тексте статьи.
+
+    Принимает текст статьи. Возвращает список целей без повторов, в порядке
+    появления.
+    """
+    seen: Dict[str, None] = {}
+    for target in DOCUMENT_LINK_PATTERN.findall(body or ""):
+        if is_document_target(target) and target not in seen:
+            seen[target] = None
+    return list(seen)
+
+
+def resolve_document_path(root_path: Path, target: str) -> Path:
+    """
+    Превращает цель ссылки в путь к файлу на диске.
+
+    Принимает корень базы и цель. Вложение ищется внутри базы (и не может
+    увести за её пределы), ссылка со схемой file: ведёт к файлу где угодно —
+    это её назначение.
+    """
+    if target.startswith(EXTERNAL_FILE_PREFIX):
+        return Path(unquote(target[len(EXTERNAL_FILE_PREFIX):]))
+    return resolve_inside_root(root_path, unquote(target))
+
+
+def check_document(root_path: Path, target: str) -> Dict[str, Any]:
+    """
+    Проверяет, доступен ли файл по ссылке.
+
+    Принимает корень базы и цель ссылки. Возвращает признак доступности, имя
+    файла и причину недоступности. Недоступность — обычное состояние на общем
+    диске (файл удалили, нет прав, диск отключили), поэтому это не исключение,
+    а результат: интерфейс должен пометить ссылку, а не упасть.
+    """
+    try:
+        path = resolve_document_path(root_path, target)
+    except ValueError:
+        return {"target": target, "available": False, "name": target,
+                "reason": "Путь вне базы знаний"}
+
+    name = path.name or unquote(target)
+    try:
+        if not path.exists():
+            return {"target": target, "available": False, "name": name,
+                    "reason": "Файл не найден"}
+        if not path.is_file():
+            return {"target": target, "available": False, "name": name,
+                    "reason": "Это не файл"}
+        path.stat()
+    except OSError as error:
+        return {"target": target, "available": False, "name": name,
+                "reason": f"Файл недоступен: {error.strerror or error}"}
+
+    return {"target": target, "available": True, "name": name, "reason": ""}
+
+
+def attachments_directory(root_path: Path, article_id: str) -> Path:
+    """
+    Возвращает папку вложений статьи.
+
+    Принимает корень базы и идентификатор статьи. Папка именуется по
+    идентификатору, поэтому вложения переживают переименование статьи.
+    """
+    return root_path / ASSETS_DIRNAME / article_id
+
+
+def attach_document(
+    root_path: Path, article_id: str, source_path: Path,
+) -> Dict[str, Any]:
+    """
+    Копирует документ в папку вложений статьи.
+
+    Принимает корень базы, идентификатор статьи и путь к исходному файлу.
+    Возвращает цель для ссылки и имя файла. Файл копируется, а не
+    перемещается: он мог лежать где угодно, и исчезновение оригинала после
+    вложения стало бы неприятным сюрпризом.
+
+    Совпадение имён не затирает прежнее вложение — подбирается свободное имя.
+    """
+    if not article_id:
+        raise ValueError("Статья без идентификатора: вложение некуда положить")
+
+    source = Path(source_path)
+    if not source.is_file():
+        raise ValueError(f"Файл не найден: {source}")
+
+    target_directory = attachments_directory(root_path, article_id)
+    target_directory.mkdir(parents=True, exist_ok=True)
+
+    safe_name = sanitize_filename(source.name, "Документ")
+    target_path = target_directory / safe_name
+    if target_path.exists():
+        stem = Path(safe_name).stem
+        suffix = Path(safe_name).suffix
+        for number in range(2, 1000):
+            # Без круглых скобок: в разметке ссылки они закрывают адрес.
+            candidate = target_directory / f"{stem}-{number}{suffix}"
+            if not candidate.exists():
+                target_path = candidate
+                break
+
+    shutil.copy2(source, target_path)
+    return {
+        "target": f"{ATTACHMENT_PREFIX}{article_id}/{quote(target_path.name)}",
+        "name": target_path.name,
+    }
+
+
+def collect_document_availability(
+    root_path: Path, articles: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """
+    Проверяет все ссылки на документы во всей базе за один проход.
+
+    Принимает корень базы и статьи с текстом. Возвращает по записи на каждую
+    цель. Проверка идёт здесь, а не отдельным запросом на каждую ссылку:
+    обращение к бэкенду стоит несколько секунд, а проверка файла — доли
+    миллисекунды, и делать её нужно ровно там, где база уже прочитана.
+    """
+    checked: Dict[str, Dict[str, Any]] = {}
+    for article in articles:
+        for target in extract_document_links(article.get("body", "")):
+            if target not in checked:
+                checked[target] = check_document(root_path, target)
+    return list(checked.values())

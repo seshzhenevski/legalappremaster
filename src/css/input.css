@@ -1011,4 +1011,27 @@
     color: var(--ink-muted);
     font-size: 11px;
   }
+
+  /* ── Ссылки на документы ───────────────────────────────────────────── */
+  .kb-doc-link {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    padding: 1px 5px;
+    border-radius: 5px;
+    background: var(--veil);
+    color: var(--ink);
+    text-decoration: none;
+  }
+  a.kb-doc-link:hover {
+    background: var(--accent-wash);
+    color: var(--accent);
+  }
+  /* Недоступный файл виден до клика, а не после. */
+  .kb-doc-broken {
+    color: var(--ink-muted);
+    text-decoration: line-through;
+    text-decoration-color: rgb(var(--c-red-500));
+    cursor: help;
+  }
 }

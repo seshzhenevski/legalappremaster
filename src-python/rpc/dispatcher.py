@@ -26,6 +26,8 @@ from logic.claim_generator import (
 from logic.court_cases_dashboard import load_dashboard_data
 from logic.knowledge_base import (
     acquire_lock,
+    attach_document,
+    check_document,
     check_lock,
     create_article,
     create_folder,
@@ -406,6 +408,31 @@ def handle_delete_kb_folder(params: dict, report_progress) -> dict:
     )
 
 
+def handle_attach_kb_document(params: dict, report_progress) -> dict:
+    """
+    Обрабатывает вложение документа в статью.
+
+    Копирует файл в служебную папку рядом с базой и возвращает цель для
+    ссылки. Документ живёт вместе со статьёй и доступен всем пользователям
+    базы, а не только тому, у кого файл лежал на своём диске.
+    """
+    return attach_document(
+        Path(params["root_path"]),
+        params["article_id"],
+        Path(params["source_path"]),
+    )
+
+
+def handle_check_kb_document(params: dict, report_progress) -> dict:
+    """
+    Обрабатывает проверку доступности файла по ссылке.
+
+    Нужна перед открытием: файл могли удалить или отключить сетевой диск уже
+    после того, как база была прочитана.
+    """
+    return check_document(Path(params["root_path"]), params["target"])
+
+
 # Карта методов RPC: имя метода → функция-обработчик.
 # Добавление нового метода — это одна строка здесь плюс одна функция выше.
 METHOD_HANDLERS = {
@@ -439,6 +466,8 @@ METHOD_HANDLERS = {
     "create_kb_folder": handle_create_kb_folder,
     "rename_kb_folder": handle_rename_kb_folder,
     "delete_kb_folder": handle_delete_kb_folder,
+    "attach_kb_document": handle_attach_kb_document,
+    "check_kb_document": handle_check_kb_document,
 }
 
 
