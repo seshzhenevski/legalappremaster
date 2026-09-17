@@ -713,7 +713,6 @@ const FORMAT_BUTTONS = [
   { label: "❝", title: "Цитата", before: "> ", after: "", line: true },
   { label: "</>", title: "Моноширинный текст", before: "`", after: "`" },
   { label: "—", title: "Разделитель", before: "\n---\n", after: "" },
-  { label: "🔗", title: "Ссылка на сайт", before: "[", after: "](https://)" },
   { label: "▦", title: "Таблица", before: "\n| Столбец | Столбец |\n| --- | --- |\n| | |\n", after: "" },
 ];
 
@@ -731,9 +730,9 @@ function buildFormatToolbar() {
   const articleLinkButton = document.createElement("button");
   articleLinkButton.type = "button";
   articleLinkButton.className = "kb-format-button";
-  articleLinkButton.textContent = "⧉";
-  articleLinkButton.title = "Ссылка на статью базы знаний";
-  articleLinkButton.addEventListener("click", handleInsertArticleLink);
+  articleLinkButton.textContent = "🔗";
+  articleLinkButton.title = "Ссылка на сайт или статью базы знаний";
+  articleLinkButton.addEventListener("click", handleInsertLink);
   toolbar.appendChild(articleLinkButton);
 
   FORMAT_BUTTONS.forEach((format) => {
@@ -1713,7 +1712,7 @@ function ensureVisualEditor(markdown) {
       markdown: startingText,
       isDark: isDarkTheme(),
       onChange: syncSourceFromVisual,
-      onInsertArticleLink: handleInsertArticleLink,
+      onInsertLink: handleInsertLink,
     });
     watchThemeForEditor();
   } catch (error) {
@@ -1864,13 +1863,60 @@ function openArticleById(articleId) {
 }
 
 /**
- * Предлагает выбрать статью и возвращает данные ссылки на неё.
+ * Вставляет ссылку, сохраняя выделенный пользователем текст.
  *
- * Возвращает {articleId, label} либо null. Заголовок пишется в текст, чтобы
- * файл оставался понятным и в проводнике, но при отображении подставляется
- * актуальный — на случай переименования.
+ * Порядок как у обычных редакторов: выделил текст — нажал «Ссылка» — выбрал,
+ * куда она ведёт. Сам текст не подменяется, он лишь становится ссылкой.
+ * Если ничего не выделено, подписью становится заголовок статьи либо адрес.
  */
-async function buildArticleLinkMarkup() {
+async function handleInsertLink() {
+  // Выделение читается до диалогов: пока человек выбирает, оно сбрасывается.
+  const selection = readEditorSelection();
+
+  const kind = await askChoice("Куда ведёт ссылка?", [
+    { value: "article", label: "На статью базы знаний",
+      hint: "Переживёт переименование и перенос статьи" },
+    { value: "url", label: "На сайт",
+      hint: "Откроется во внешнем браузере" },
+  ]);
+  if (!kind) {
+    return;
+  }
+
+  const link = kind === "article"
+    ? await chooseArticleLink(selection.text)
+    : await chooseExternalLink(selection.text);
+  if (!link) {
+    return;
+  }
+  insertLinkIntoEditor(selection, link.url, link.label);
+}
+
+/**
+ * Читает выделение в том редакторе, который сейчас открыт.
+ *
+ * Для поля разметки запоминаются и границы выделения: после диалога фокус
+ * уходит, и вставлять придётся по сохранённым позициям.
+ */
+function readEditorSelection() {
+  if (editorMode === "visual" && visualEditor) {
+    return { text: visualEditor.getSelectedText().trim() };
+  }
+  const editor = document.getElementById("kb-editor");
+  return {
+    text: editor.value.slice(editor.selectionStart, editor.selectionEnd).trim(),
+    start: editor.selectionStart,
+    end: editor.selectionEnd,
+  };
+}
+
+/**
+ * Предлагает выбрать статью базы и возвращает адрес и подпись ссылки.
+ *
+ * Принимает выделенный текст. Подписью остаётся он, а если ничего не
+ * выделено — заголовок выбранной статьи.
+ */
+async function chooseArticleLink(selectedText) {
   const items = knowledgeBase.articles
     .filter((article) => article.id && article.relative_path !== editState.relativePath)
     .map((article) => ({
@@ -1889,27 +1935,49 @@ async function buildArticleLinkMarkup() {
     return null;
   }
   const target = knowledgeBase.articlesById.get(chosenId.toLowerCase());
-  return { articleId: chosenId, label: target.title };
+  return { url: chosenId, label: selectedText || target.title };
 }
 
 /**
- * Вставляет ссылку на статью в тот редактор, который сейчас открыт.
+ * Спрашивает адрес сайта и возвращает адрес и подпись ссылки.
+ *
+ * Принимает выделенный текст. Адреса не http и не https отклоняются: такие
+ * ссылки при показе статьи остаются обычным текстом, и человек решил бы,
+ * что ссылка просто не сработала.
  */
-async function handleInsertArticleLink() {
-  const link = await buildArticleLinkMarkup();
-  if (!link) {
-    return;
+async function chooseExternalLink(selectedText) {
+  const url = await askText({
+    title: "Ссылка на сайт",
+    text: "Откроется во внешнем браузере.",
+    initialValue: "https://",
+    confirmLabel: "Вставить",
+  });
+  if (!url) {
+    return null;
   }
+  if (!/^https?:\/\/.+/i.test(url)) {
+    showToast("Адрес должен начинаться с http:// или https://");
+    return null;
+  }
+  return { url: url, label: selectedText || url };
+}
 
+/**
+ * Вставляет ссылку в активный редактор.
+ *
+ * Принимает сохранённое выделение, адрес и подпись. В поле разметки вставка
+ * идёт по запомненным границам: фокус после диалога уже не там.
+ */
+function insertLinkIntoEditor(selection, url, label) {
   if (editorMode === "visual" && visualEditor) {
-    visualEditor.insertArticleLink(link.articleId, link.label);
+    visualEditor.insertLink(url, label);
     syncSourceFromVisual();
     return;
   }
 
   const editor = document.getElementById("kb-editor");
-  const markup = `[${link.label}](${link.articleId})`;
-  editor.setRangeText(markup, editor.selectionStart, editor.selectionEnd, "end");
+  const markup = `[${label}](${url})`;
+  editor.setRangeText(markup, selection.start, selection.end, "end");
   editor.focus();
   updatePreview();
 }

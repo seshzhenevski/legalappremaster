@@ -18,18 +18,18 @@ const TOOLBAR_ITEMS = [
   ["heading", "bold", "italic"],
   ["hr", "quote"],
   ["ul", "ol", "task"],
-  ["table", "link"],
+  ["table"],
   ["code", "codeblock"],
 ];
 
 /**
- * Создаёт кнопку вставки ссылки на статью базы.
+ * Создаёт кнопку вставки ссылки.
  *
- * У библиотеки есть своя кнопка ссылки, но она спрашивает адрес, а ссылка
- * на статью хранится идентификатором, который человек знать не обязан —
- * статью нужно выбирать из списка.
+ * Заменяет штатную кнопку библиотеки: та умеет только адрес сайта, а нам
+ * нужен выбор между сайтом и статьёй базы, причём статью человек выбирает
+ * из списка — её идентификатор он знать не обязан.
  */
-function buildArticleLinkButton(onInsertArticleLink) {
+function buildArticleLinkButton(onInsertLink) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "toastui-editor-toolbar-icons kb-toolbar-article-link";
@@ -38,8 +38,8 @@ function buildArticleLinkButton(onInsertArticleLink) {
   button.textContent = "⧉";
   button.addEventListener("click", (event) => {
     event.preventDefault();
-    if (onInsertArticleLink) {
-      onInsertArticleLink();
+    if (onInsertLink) {
+      onInsertLink();
     }
   });
   return button;
@@ -56,7 +56,7 @@ function buildArticleLinkButton(onInsertArticleLink) {
  * хоста при каждом запуске, а это внутренний инструмент юридического отдела.
  */
 export function createVisualEditor(
-  { container, markdown, isDark, onChange, onInsertArticleLink },
+  { container, markdown, isDark, onChange, onInsertLink },
 ) {
   const EditorConstructor = window.ToastUIEditor?.default || window.ToastUIEditor;
   if (!EditorConstructor) {
@@ -76,9 +76,9 @@ export function createVisualEditor(
     language: "ru-RU",
     initialValue: markdown || "",
     toolbarItems: TOOLBAR_ITEMS.concat([[{
-      name: "kbArticleLink",
-      tooltip: "Ссылка на статью базы знаний",
-      el: buildArticleLinkButton(onInsertArticleLink),
+      name: "kbLink",
+      tooltip: "Ссылка на сайт или статью базы знаний",
+      el: buildArticleLinkButton(onInsertLink),
     }]]),
     autofocus: false,
     events: {
@@ -121,15 +121,26 @@ export function createVisualEditor(
     },
 
     /**
-     * Вставляет ссылку на статью в место курсора.
+     * Возвращает выделенный пользователем текст.
      *
-     * Принимает идентификатор статьи и подпись. Используется штатная команда
-     * редактора, а не вставка текста: вставленный текст библиотека считает
-     * обычными символами и экранирует служебные знаки, из-за чего в статье
-     * оказывалось «\[Заголовок\]\(kb-...\)» вместо рабочей ссылки.
+     * Читается до открытия диалога: пока человек выбирает, куда ведёт
+     * ссылка, выделение в редакторе успевает сброситься.
      */
-    insertArticleLink(articleId, label) {
-      editor.exec("addLink", { linkUrl: articleId, linkText: label });
+    getSelectedText() {
+      return editor.getSelectedText() || "";
+    },
+
+    /**
+     * Вставляет ссылку в место курсора, оставляя подпись как есть.
+     *
+     * Принимает адрес (или идентификатор статьи) и текст ссылки.
+     * Используется штатная команда редактора, а не вставка текста:
+     * вставленный текст библиотека считает обычными символами и экранирует
+     * служебные знаки, из-за чего получалось «\[Заголовок\]\(kb-...\)»
+     * вместо рабочей ссылки.
+     */
+    insertLink(url, label) {
+      editor.exec("addLink", { linkUrl: url, linkText: label });
     },
 
     /**

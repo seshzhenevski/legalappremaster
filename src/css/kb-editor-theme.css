@@ -68,25 +68,26 @@
   color: var(--accent) !important;
 }
 
-/* Наша кнопка в панели редактора. Библиотека рисует свои значки спрайтом и
-   задаёт им размеры через фон, а у этой значок текстовый — поэтому фон
-   убирается, а размеры и выравнивание задаются явно, иначе кнопка съезжает
-   относительно соседних. */
-.kb-toolbar-article-link {
-  display: inline-flex !important;
+/* Наша кнопка в панели редактора.
+
+   Библиотека кладёт штатные кнопки прямо в flex-группу, а наш элемент
+   заворачивает в отдельную обёртку с display:inline-block. Из-за этого
+   кнопка выравнивалась по базовой линии текста и съезжала вниз относительно
+   соседних — обёртке нужно вести себя как обычный элемент группы.
+
+   Размеры кнопке задаёт правило самой библиотеки, поэтому здесь только
+   убирается фон-спрайт: у нашего значка он текстовый. */
+.toastui-editor-defaultUI .toastui-editor-toolbar-item-wrapper {
+  display: flex !important;
   align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  margin: 7px 5px;
-  padding: 0;
+}
+
+.kb-toolbar-article-link {
   background-image: none !important;
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1;
-  vertical-align: top;
   color: #555;
 }
 .toastui-editor-dark .kb-toolbar-article-link {
   color: #eee;
 }
-
