@@ -973,8 +973,20 @@
     border: none !important;
     font-family: inherit !important;
   }
-  .toastui-editor-defaultUI .toastui-editor-mode-switch {
-    display: none !important;      /* режим переключается нашей кнопкой */
+  .toastui-editor-defaultUI .toastui-editor-mode-switch,
+  .toastui-editor-defaultUI .toastui-editor-md-tab-container {
+    /* Собственные переключатели библиотеки — «Markdown/WYSIWYG» и
+       «Редактор/Просмотр». В нашей связке они мертвы: режим разметки у нас
+       свой, а библиотечный редактор Markdown не показывается никогда. */
+    display: none !important;
+  }
+
+  /* Шапка таблицы в правке должна выглядеть так же, как в готовой статье,
+     иначе при сохранении таблица заметно меняется на вид. */
+  .toastui-editor-contents th {
+    background: var(--veil) !important;
+    color: var(--ink) !important;
+    font-weight: 500 !important;
   }
   .toastui-editor-toolbar {
     background: transparent !important;

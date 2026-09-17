@@ -45,6 +45,9 @@ export function createVisualEditor({ container, markdown, isDark, onChange }) {
     height: "100%",
     initialEditType: "wysiwyg",
     hideModeSwitch: true,
+    // Предпросмотр вкладками не нужен: режим разметки у нас свой, а
+    // библиотечный редактор Markdown не показывается никогда.
+    previewStyle: "vertical",
     usageStatistics: false,
     language: "ru-RU",
     initialValue: markdown || "",
