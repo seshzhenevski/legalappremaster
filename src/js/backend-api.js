@@ -295,3 +295,41 @@ export async function requestKnowledgeBaseVersion(rootPath, articleId, versionNa
 export async function requestKnowledgeBaseVersionRestore(request) {
   return callBackendMethod("restore_kb_version", request);
 }
+
+/**
+ * Удаляет статью базы знаний в корзину.
+ *
+ * Принимает корень базы и относительный путь. Статья не стирается, а
+ * переносится в служебную папку вместе с записью об исходном пути.
+ */
+export async function requestKnowledgeBaseDelete(rootPath, relativePath) {
+  return callBackendMethod("delete_kb_article", {
+    root_path: rootPath, relative_path: relativePath,
+  });
+}
+
+/**
+ * Перечисляет содержимое корзины, недавно удалённые первыми.
+ */
+export async function requestKnowledgeBaseTrash(rootPath) {
+  return callBackendMethod("list_kb_trash", { root_path: rootPath });
+}
+
+/**
+ * Возвращает статью из корзины на исходное место.
+ */
+export async function requestKnowledgeBaseTrashRestore(rootPath, entryId) {
+  return callBackendMethod("restore_kb_trash_entry", {
+    root_path: rootPath, entry_id: entryId,
+  });
+}
+
+/**
+ * Удаляет запись корзины окончательно.
+ */
+export async function requestKnowledgeBaseTrashPurge(rootPath, entryId) {
+  return callBackendMethod("purge_kb_trash_entry", {
+    root_path: rootPath, entry_id: entryId,
+  });
+}
+

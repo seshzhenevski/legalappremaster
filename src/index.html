@@ -1419,6 +1419,8 @@
                 title="Перечитать базу с сетевого диска">Обновить</button>
               <button id="kb-new-article-button" type="button" class="px-3 bg-slate-100 hover:bg-slate-200 rounded-lg py-2 text-sm"
                 title="Создать статью в выбранном разделе">Создать</button>
+              <button id="kb-trash-button" type="button" class="px-3 bg-slate-100 hover:bg-slate-200 rounded-lg py-2 text-sm"
+                title="Корзина: удалённые статьи">Корзина</button>
               <button type="button" data-kb-choose-root class="px-3 bg-slate-100 hover:bg-slate-200 rounded-lg py-2 text-sm"
                 title="Сменить папку базы знаний">Папка</button>
             </div>
@@ -1441,6 +1443,8 @@
                   <button id="kb-edit-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm">Изменить</button>
                   <button id="kb-versions-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm"
                     title="Предыдущие версии статьи">Версии</button>
+                  <button id="kb-delete-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                    title="Удалить статью в корзину">Удалить</button>
                   <button id="kb-save-button" type="button" class="bg-blue-600 hover:bg-blue-700 text-oncolor rounded-lg px-3 py-1.5 text-sm font-medium hidden">Сохранить</button>
                   <button id="kb-cancel-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm hidden">Отмена</button>
                 </div>
@@ -1495,6 +1499,21 @@
           </p>
           <div id="kb-versions-list" class="kb-versions-list thin-scroll"></div>
           <div id="kb-version-preview" class="kb-body kb-version-preview thin-scroll hidden"></div>
+        </div>
+      </div>
+
+      <!-- Корзина -->
+      <div id="kb-trash-overlay" class="hidden kb-overlay">
+        <div class="kb-dialog">
+          <div class="flex items-center justify-between gap-4 mb-3">
+            <p class="font-medium text-slate-700">Корзина</p>
+            <button id="kb-trash-close" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm">Закрыть</button>
+          </div>
+          <p class="text-sm text-slate-500 mb-3">
+            Удалённые статьи хранятся здесь и не пропадают. Восстановление
+            возвращает статью туда, откуда её удалили.
+          </p>
+          <div id="kb-trash-list" class="kb-versions-list thin-scroll"></div>
         </div>
       </div>
 

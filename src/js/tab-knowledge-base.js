@@ -13,8 +13,12 @@
 import {
   requestKnowledgeBase,
   requestKnowledgeBaseCreate,
+  requestKnowledgeBaseDelete,
   requestKnowledgeBaseLock,
   requestKnowledgeBaseSave,
+  requestKnowledgeBaseTrash,
+  requestKnowledgeBaseTrashPurge,
+  requestKnowledgeBaseTrashRestore,
   requestKnowledgeBaseUnlock,
   requestKnowledgeBaseVersion,
   requestKnowledgeBaseVersionRestore,
@@ -137,6 +141,12 @@ function initEditor() {
     .addEventListener("click", handleVersionsClick);
   document.getElementById("kb-versions-close")
     .addEventListener("click", () => hideOverlay("kb-versions-overlay"));
+  document.getElementById("kb-delete-button")
+    .addEventListener("click", handleDeleteClick);
+  document.getElementById("kb-trash-button")
+    .addEventListener("click", handleTrashClick);
+  document.getElementById("kb-trash-close")
+    .addEventListener("click", () => hideOverlay("kb-trash-overlay"));
 
   document.getElementById("kb-conflict-back")
     .addEventListener("click", () => hideOverlay("kb-conflict-overlay"));
@@ -810,6 +820,7 @@ function toggleEditChrome(isEditing) {
   shown("kb-article-title", !isEditing);
   shown("kb-edit-button", !isEditing);
   shown("kb-versions-button", !isEditing);
+  shown("kb-delete-button", !isEditing);
   shown("kb-save-button", isEditing);
   shown("kb-cancel-button", isEditing);
 }
@@ -1127,7 +1138,8 @@ function hideOverlay(overlayId) {
  */
 function setBusy(isBusy) {
   ["kb-edit-button", "kb-save-button", "kb-cancel-button",
-   "kb-new-article-button", "kb-versions-button", "kb-refresh-button"]
+   "kb-new-article-button", "kb-versions-button", "kb-refresh-button",
+   "kb-delete-button", "kb-trash-button"]
     .forEach((buttonId) => {
       const button = document.getElementById(buttonId);
       if (button) {
@@ -1135,4 +1147,164 @@ function setBusy(isBusy) {
       }
     });
   document.body.style.cursor = isBusy ? "progress" : "";
+}
+
+// ── Удаление и корзина ───────────────────────────────────────────────────────
+
+/**
+ * Удаляет открытую статью в корзину.
+ *
+ * Спрашивает подтверждение и сразу говорит, что удаление обратимо: на общем
+ * диске человек должен понимать, безвозвратно ли действие, до того как
+ * нажмёт кнопку, а не после.
+ */
+async function handleDeleteClick() {
+  const article = knowledgeBase.articlesByPath.get(selectedRelativePath);
+  if (!article) {
+    return;
+  }
+  if (!window.confirm(
+    `Удалить статью «${article.title}»?\n\n` +
+    "Она попадёт в корзину, откуда её можно вернуть на прежнее место.",
+  )) {
+    return;
+  }
+
+  setBusy(true);
+  try {
+    await requestKnowledgeBaseDelete(knowledgeBase.rootPath, selectedRelativePath);
+    selectedRelativePath = "";
+    await reloadKnowledgeBase(false);
+    showToast(`Статья «${article.title}» перенесена в корзину`);
+  } catch (error) {
+    showToast(`Не удалось удалить: ${describeError(error)}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+/**
+ * Показывает содержимое корзины.
+ */
+async function handleTrashClick() {
+  setBusy(true);
+  try {
+    const entries = await requestKnowledgeBaseTrash(knowledgeBase.rootPath);
+    renderTrashList(entries);
+    showOverlay("kb-trash-overlay");
+  } catch (error) {
+    showToast(`Не удалось открыть корзину: ${describeError(error)}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+/**
+ * Заполняет список корзины кнопками восстановления и окончательного удаления.
+ *
+ * Принимает записи корзины. У каждой видно исходный путь — по одному
+ * заголовку не всегда понятно, какая из похожих статей удалена.
+ */
+function renderTrashList(entries) {
+  const list = document.getElementById("kb-trash-list");
+  list.innerHTML = "";
+
+  if (!entries.length) {
+    const empty = document.createElement("p");
+    empty.className = "kb-empty-hint";
+    empty.textContent = "Корзина пуста.";
+    list.appendChild(empty);
+    return;
+  }
+
+  entries.forEach((entry) => {
+    const row = document.createElement("div");
+    row.className = "kb-version-row";
+
+    const labels = document.createElement("span");
+    labels.className = "kb-article-labels";
+
+    const title = document.createElement("span");
+    title.className = "kb-article-title";
+    title.textContent = entry.title;
+    labels.appendChild(title);
+
+    const where = document.createElement("span");
+    where.className = "kb-article-path";
+    where.textContent =
+      `${entry.original_relative_path} · удалена ${formatDateTime(entry.deleted_at)}`;
+    labels.appendChild(where);
+    row.appendChild(labels);
+
+    const restoreButton = document.createElement("button");
+    restoreButton.type = "button";
+    restoreButton.className = "kb-version-action";
+    restoreButton.textContent = "Восстановить";
+    restoreButton.addEventListener("click", () => restoreFromTrash(entry));
+    row.appendChild(restoreButton);
+
+    const purgeButton = document.createElement("button");
+    purgeButton.type = "button";
+    purgeButton.className = "kb-version-action";
+    purgeButton.textContent = "Удалить навсегда";
+    purgeButton.addEventListener("click", () => purgeFromTrash(entry));
+    row.appendChild(purgeButton);
+
+    list.appendChild(row);
+  });
+}
+
+/**
+ * Возвращает статью из корзины на исходное место.
+ *
+ * Если на прежнем пути успела появиться другая статья, восстановленная
+ * кладётся рядом под именем с пометкой — об этом пользователю сообщается,
+ * а не умалчивается.
+ */
+async function restoreFromTrash(entry) {
+  setBusy(true);
+  try {
+    const result = await requestKnowledgeBaseTrashRestore(
+      knowledgeBase.rootPath, entry.entry_id,
+    );
+    hideOverlay("kb-trash-overlay");
+    await reloadKnowledgeBase(false);
+    showArticle(result.restored_relative_path);
+    renderTreePane();
+
+    showToast(result.renamed
+      ? "На прежнем месте уже есть статья — восстановленная положена рядом"
+      : `Статья «${entry.title}» восстановлена`);
+  } catch (error) {
+    showToast(`Не удалось восстановить: ${describeError(error)}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+/**
+ * Удаляет запись корзины окончательно.
+ *
+ * Единственное необратимое действие во вкладке, поэтому подтверждение
+ * говорит об этом прямо.
+ */
+async function purgeFromTrash(entry) {
+  if (!window.confirm(
+    `Удалить «${entry.title}» окончательно?\n\n` +
+    "Это единственное необратимое действие: вернуть статью будет нельзя.",
+  )) {
+    return;
+  }
+
+  setBusy(true);
+  try {
+    await requestKnowledgeBaseTrashPurge(knowledgeBase.rootPath, entry.entry_id);
+    const entries = await requestKnowledgeBaseTrash(knowledgeBase.rootPath);
+    renderTrashList(entries);
+    showToast("Статья удалена окончательно");
+  } catch (error) {
+    showToast(`Не удалось удалить: ${describeError(error)}`);
+  } finally {
+    setBusy(false);
+  }
 }

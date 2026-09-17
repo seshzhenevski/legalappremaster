@@ -28,12 +28,16 @@ from logic.knowledge_base import (
     acquire_lock,
     check_lock,
     create_article,
+    delete_article,
+    list_trash,
     list_versions,
     load_knowledge_base,
     read_article,
+    purge_trash_entry,
     read_version,
     release_lock,
     resolve_inside_root,
+    restore_article,
     restore_version,
     save_article,
 )
@@ -308,6 +312,45 @@ def handle_restore_kb_version(params: dict, report_progress) -> dict:
     )
 
 
+def handle_delete_kb_article(params: dict, report_progress) -> dict:
+    """
+    Обрабатывает удаление статьи базы знаний.
+
+    Статья не стирается, а переносится в корзину вместе с записью об
+    исходном пути: на общем диске случайное удаление обходится дорого.
+    Возвращает запись корзины, по которой статью можно вернуть.
+    """
+    root_path = Path(params["root_path"])
+    article_path = resolve_inside_root(root_path, params["relative_path"])
+    return delete_article(root_path, article_path)
+
+
+def handle_list_kb_trash(params: dict, report_progress) -> list:
+    """
+    Обрабатывает запрос содержимого корзины, недавно удалённые первыми.
+    """
+    return list_trash(Path(params["root_path"]))
+
+
+def handle_restore_kb_trash_entry(params: dict, report_progress) -> dict:
+    """
+    Обрабатывает восстановление статьи из корзины на исходное место.
+
+    Если на исходном пути уже лежит другая статья, она НЕ перезаписывается —
+    восстановленная кладётся рядом под именем с пометкой.
+    """
+    return restore_article(Path(params["root_path"]), params["entry_id"])
+
+
+def handle_purge_kb_trash_entry(params: dict, report_progress) -> None:
+    """
+    Обрабатывает окончательное удаление записи корзины.
+
+    После этого восстановить статью средствами приложения нельзя.
+    """
+    purge_trash_entry(Path(params["root_path"]), params["entry_id"])
+
+
 # Карта методов RPC: имя метода → функция-обработчик.
 # Добавление нового метода — это одна строка здесь плюс одна функция выше.
 METHOD_HANDLERS = {
@@ -333,6 +376,10 @@ METHOD_HANDLERS = {
     "list_kb_versions": handle_list_kb_versions,
     "read_kb_version": handle_read_kb_version,
     "restore_kb_version": handle_restore_kb_version,
+    "delete_kb_article": handle_delete_kb_article,
+    "list_kb_trash": handle_list_kb_trash,
+    "restore_kb_trash_entry": handle_restore_kb_trash_entry,
+    "purge_kb_trash_entry": handle_purge_kb_trash_entry,
 }
 
 
