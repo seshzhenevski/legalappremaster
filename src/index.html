@@ -7,6 +7,8 @@
   <!-- Ранняя установка темы до отрисовки (без вспышки). Блокирующий скрипт из
        'self' — инлайн запрещён CSP (script-src 'self'). -->
   <script src="js/theme-boot.js"></script>
+  <link rel="stylesheet" href="css/vendor/toastui-editor.css">
+  <link rel="stylesheet" href="css/vendor/toastui-editor-dark.css">
   <link rel="stylesheet" href="css/tailwind.css" />
   <style>
     /*
@@ -1490,11 +1492,29 @@
 
             <!-- Правка: исходный текст слева, вид статьи справа -->
             <div id="kb-edit-mode" class="hidden flex-1 min-h-0 flex flex-col">
-              <div id="kb-format-toolbar" class="flex flex-wrap gap-1 px-4 py-2 border-b border-slate-100"></div>
-              <div class="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2">
-                <textarea id="kb-editor" spellcheck="true"
-                  class="kb-editor-area thin-scroll" placeholder="Текст статьи"></textarea>
-                <div id="kb-preview" class="kb-body p-5 overflow-y-auto thin-scroll border-l border-slate-100"></div>
+
+              <!-- Переключатель способа правки. Оба режима пишут в файл один
+                   и тот же Markdown, различается только то, что видит человек. -->
+              <div class="flex items-center gap-1 px-4 pt-2">
+                <button id="kb-mode-visual" type="button" class="kb-mode-button"
+                  title="Править так, как статья будет выглядеть">Как в документе</button>
+                <button id="kb-mode-source" type="button" class="kb-mode-button"
+                  title="Править разметку с предпросмотром">Разметка</button>
+              </div>
+
+              <!-- Режим разметки: слева исходный текст, справа результат -->
+              <div id="kb-source-mode" class="flex-1 min-h-0 flex flex-col">
+                <div id="kb-format-toolbar" class="flex flex-wrap gap-1 px-4 py-2 border-b border-slate-100"></div>
+                <div class="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2">
+                  <textarea id="kb-editor" spellcheck="true"
+                    class="kb-editor-area thin-scroll" placeholder="Текст статьи"></textarea>
+                  <div id="kb-preview" class="kb-body p-5 overflow-y-auto thin-scroll border-l border-slate-100"></div>
+                </div>
+              </div>
+
+              <!-- Режим «как в документе» -->
+              <div id="kb-visual-mode" class="hidden flex-1 min-h-0 p-3">
+                <div id="kb-visual-editor" class="h-full"></div>
               </div>
             </div>
           </article>
@@ -1965,6 +1985,7 @@
     приложение работает без интернета, CDN здесь недоступен. Обычный script
     (а не модуль) — UMD-сборка кладёт Chart в window до запуска app.js.
   -->
+  <script src="js/vendor/toastui-editor.js"></script>
   <script src="js/vendor/chart.umd.js"></script>
   <script type="module" src="js/app.js"></script>
 </body>

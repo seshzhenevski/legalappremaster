@@ -32,6 +32,7 @@ import { askConfirm, askFolderChoice, askText } from "./kb-dialog.js";
 import { selectDirectory } from "./file-dialogs.js";
 import { loadKnowledgeBaseRoot, saveKnowledgeBaseRoot } from "./kb-settings-store.js";
 import { extractHeadings, renderMarkdown } from "./kb-markdown.js";
+import { createVisualEditor } from "./kb-wysiwyg.js";
 import { showToast } from "./toast.js";
 
 // Сколько ждать снятия замка при закрытии приложения. Обращение к бэкенду —
@@ -173,6 +174,11 @@ function initEditor() {
 
   const editor = document.getElementById("kb-editor");
   editor.addEventListener("input", updatePreview);
+
+  document.getElementById("kb-mode-visual")
+    .addEventListener("click", () => applyEditorMode("visual"));
+  document.getElementById("kb-mode-source")
+    .addEventListener("click", () => applyEditorMode("source"));
 
   buildFormatToolbar();
   releaseLockOnApplicationClose();
@@ -828,11 +834,15 @@ function enterEditMode(article) {
   editState.properties = { ...article.properties };
 
   document.getElementById("kb-editor").value = article.body;
+  updatePreview();
+  applyEditorMode(loadEditorMode(), false);
+  if (editorMode === "visual") {
+    ensureVisualEditor(article.body);
+  }
   document.getElementById("kb-edit-title").value = article.properties.title || "";
   document.getElementById("kb-edit-status").value =
     article.properties.status || "черновик";
   document.getElementById("kb-edit-icon").value = article.properties.icon || "";
-  updatePreview();
 
   toggleEditChrome(true);
   showLockBanner(null);
@@ -881,7 +891,7 @@ async function handleSaveClick() {
       root_path: knowledgeBase.rootPath,
       relative_path: editState.relativePath,
       properties: properties,
-      body: document.getElementById("kb-editor").value,
+      body: getEditorContent(),
       expected_fingerprint: editState.fingerprint,
     });
 
@@ -892,6 +902,7 @@ async function handleSaveClick() {
 
     await requestKnowledgeBaseUnlock(knowledgeBase.rootPath, editState.articleId);
     editState.isEditing = false;
+    disposeVisualEditor();
     toggleEditChrome(false);
     await reloadKnowledgeBase(false);
     showToast("Статья сохранена");
@@ -908,9 +919,8 @@ async function handleSaveClick() {
  * Спрашивает подтверждение: набранный текст нигде больше не сохранён.
  */
 async function handleCancelClick() {
-  const editor = document.getElementById("kb-editor");
   const article = knowledgeBase.articlesByPath.get(editState.relativePath);
-  const hasChanges = article && editor.value !== article.body;
+  const hasChanges = article && getEditorContent().trim() !== (article.body || "").trim();
 
   if (hasChanges && !await askConfirm({
     title: "Отменить правки?",
@@ -923,6 +933,7 @@ async function handleCancelClick() {
 
   await requestKnowledgeBaseUnlock(knowledgeBase.rootPath, editState.articleId);
   editState.isEditing = false;
+  disposeVisualEditor();
   toggleEditChrome(false);
   showArticle(editState.relativePath);
 }
@@ -1008,12 +1019,13 @@ async function handleConflictSaveCopy() {
       root_path: knowledgeBase.rootPath,
       folder_relative_path: folder,
       title: `${title} (моя версия)`,
-      body: document.getElementById("kb-editor").value,
+      body: getEditorContent(),
     });
 
     hideOverlay("kb-conflict-overlay");
     await requestKnowledgeBaseUnlock(knowledgeBase.rootPath, editState.articleId);
     editState.isEditing = false;
+    disposeVisualEditor();
     toggleEditChrome(false);
     await reloadKnowledgeBase(false);
     showArticle(created.relative_path);
@@ -1551,5 +1563,155 @@ async function handleMoveClick() {
     showToast(`Не удалось перенести: ${describeError(error)}`);
   } finally {
     setBusy(false);
+  }
+}
+
+// ── Два способа правки ───────────────────────────────────────────────────────
+// Оба пишут в файл один и тот же Markdown; различается только то, что видит
+// человек. Выбор запоминается — переключать его при каждой правке не нужно.
+
+const EDITOR_MODE_STORAGE_KEY = "kb-editor-mode";
+
+let visualEditor = null;
+let editorMode = "visual";
+
+/**
+ * Читает запомненный способ правки.
+ *
+ * Хранилище может быть недоступно (приватный режим, запрет на запись) —
+ * тогда просто берём режим по умолчанию.
+ */
+function loadEditorMode() {
+  try {
+    const stored = localStorage.getItem(EDITOR_MODE_STORAGE_KEY);
+    return stored === "source" ? "source" : "visual";
+  } catch {
+    return "visual";
+  }
+}
+
+/**
+ * Запоминает выбранный способ правки.
+ */
+function storeEditorMode(mode) {
+  try {
+    localStorage.setItem(EDITOR_MODE_STORAGE_KEY, mode);
+  } catch {
+    // Не сохранилось — на текущий сеанс режим всё равно применён.
+  }
+}
+
+/**
+ * Отвечает, включена ли сейчас тёмная тема приложения.
+ *
+ * Редактор оформляется отдельным классом, а тему приложение переключает
+ * классом на корневом элементе (см. theme.js).
+ */
+function isDarkTheme() {
+  return document.documentElement.classList.contains("dark");
+}
+
+/**
+ * Возвращает текущий текст статьи из того редактора, который сейчас открыт.
+ */
+function getEditorContent() {
+  if (editorMode === "visual" && visualEditor) {
+    return visualEditor.getMarkdown();
+  }
+  return document.getElementById("kb-editor").value;
+}
+
+/**
+ * Кладёт текст статьи в оба редактора.
+ *
+ * Держать их синхронными проще, чем помнить, какой из них «главный»:
+ * переключение режима тогда не требует переноса текста.
+ */
+function setEditorContent(markdown) {
+  document.getElementById("kb-editor").value = markdown;
+  updatePreview();
+  if (visualEditor) {
+    visualEditor.setMarkdown(markdown);
+  }
+}
+
+/**
+ * Включает выбранный способ правки.
+ *
+ * Принимает режим и признак того, что текст нужно перенести из прежнего
+ * редактора. Редактор «как в документе» создаётся лениво — при первом
+ * обращении: он весит полмегабайта, и тем, кто правит разметкой, он не нужен.
+ */
+function applyEditorMode(mode, carryContentOver = true) {
+  const markdown = carryContentOver ? getEditorContent() : null;
+  editorMode = mode;
+  storeEditorMode(mode);
+
+  document.getElementById("kb-source-mode").classList.toggle("hidden", mode !== "source");
+  document.getElementById("kb-visual-mode").classList.toggle("hidden", mode !== "visual");
+  document.getElementById("kb-mode-visual")
+    .classList.toggle("kb-mode-active", mode === "visual");
+  document.getElementById("kb-mode-source")
+    .classList.toggle("kb-mode-active", mode === "source");
+
+  if (mode === "visual") {
+    ensureVisualEditor(markdown);
+  } else if (markdown !== null) {
+    document.getElementById("kb-editor").value = markdown;
+    updatePreview();
+  }
+}
+
+/**
+ * Создаёт редактор «как в документе», если он ещё не создан.
+ *
+ * Принимает текст, с которым его открыть. Ошибка загрузки библиотеки не
+ * оставляет пользователя без редактора вовсе — вкладка возвращается к
+ * правке разметкой и объясняет, что произошло.
+ */
+function ensureVisualEditor(markdown) {
+  const container = document.getElementById("kb-visual-editor");
+  const startingText = markdown !== null && markdown !== undefined
+    ? markdown
+    : document.getElementById("kb-editor").value;
+
+  if (visualEditor) {
+    visualEditor.setMarkdown(startingText);
+    visualEditor.setDark(isDarkTheme());
+    return;
+  }
+
+  try {
+    visualEditor = createVisualEditor({
+      container: container,
+      markdown: startingText,
+      isDark: isDarkTheme(),
+      onChange: syncSourceFromVisual,
+    });
+  } catch (error) {
+    showToast(`Редактор не загрузился: ${describeError(error)}`);
+    applyEditorMode("source", false);
+  }
+}
+
+/**
+ * Переносит правки из редактора «как в документе» в поле разметки.
+ *
+ * Нужно, чтобы отмена правок сравнивала текст с исходным одинаково в обоих
+ * режимах, и чтобы переключение туда-обратно ничего не теряло.
+ */
+function syncSourceFromVisual() {
+  if (visualEditor) {
+    document.getElementById("kb-editor").value = visualEditor.getMarkdown();
+  }
+}
+
+/**
+ * Закрывает редактор «как в документе» при выходе из правки.
+ */
+function disposeVisualEditor() {
+  if (visualEditor) {
+    visualEditor.destroy();
+    visualEditor = null;
   }
 }
