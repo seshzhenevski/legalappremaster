@@ -39,6 +39,12 @@ import {
   renderMarkdown,
 } from "./kb-markdown.js";
 import { createVisualEditor } from "./kb-wysiwyg.js";
+import {
+  findMatches,
+  normalizeForSearch,
+  searchArticles,
+  searchStem,
+} from "./kb-search.js";
 import { showToast } from "./toast.js";
 
 // Сколько ждать снятия замка при закрытии приложения. Обращение к бэкенду —
@@ -351,7 +357,7 @@ function restoreSelection() {
  */
 function renderTreePane() {
   const container = document.getElementById("kb-tree");
-  const query = document.getElementById("kb-search").value.trim().toLowerCase();
+  const query = currentSearchQuery();
   container.innerHTML = "";
 
   if (query) {
@@ -370,18 +376,7 @@ function renderTreePane() {
  * совпадение в заголовке ставится выше совпадения в тексте.
  */
 function buildSearchResults(query) {
-  const byTitle = [];
-  const byBody = [];
-
-  knowledgeBase.articles.forEach((article) => {
-    if (article.title.toLowerCase().includes(query)) {
-      byTitle.push(article);
-    } else if (article.body.toLowerCase().includes(query)) {
-      byBody.push(article);
-    }
-  });
-
-  const results = byTitle.concat(byBody);
+  const results = searchArticles(knowledgeBase.articles, query);
   const list = document.createElement("div");
   list.className = "kb-search-results";
 
@@ -393,12 +388,14 @@ function buildSearchResults(query) {
     return list;
   }
 
+  const totalMatches = results.reduce((sum, item) => sum + item.matchCount, 0);
   const counter = document.createElement("p");
   counter.className = "kb-search-counter";
-  counter.textContent = `Найдено статей: ${results.length}`;
+  counter.textContent =
+    `Статей: ${results.length} · совпадений: ${totalMatches}`;
   list.appendChild(counter);
 
-  results.forEach((article) => list.appendChild(buildArticleButton(article, true)));
+  results.forEach((result) => list.appendChild(buildSearchResultItem(result)));
   return list;
 }
 
@@ -581,6 +578,7 @@ function showArticle(relativePath) {
   renderArticleProperties(article);
   renderTableOfContents(article.body);
   renderBacklinks(article);
+  highlightSearchInArticle(searchStem(currentSearchQuery()));
 }
 
 /**
@@ -2111,5 +2109,117 @@ function markDocumentUnavailable(target, checked) {
   knowledgeBase.documents.set(target, checked);
   if (selectedRelativePath) {
     showArticle(selectedRelativePath);
+  }
+}
+
+// ── Показ результатов поиска и подсветка в статье ────────────────────────────
+
+/**
+ * Возвращает текущий поисковый запрос.
+ */
+function currentSearchQuery() {
+  return document.getElementById("kb-search").value.trim();
+}
+
+/**
+ * Собирает строку результата: заголовок, путь, счётчик и фрагменты текста.
+ *
+ * Принимает запись результата поиска. Фрагменты собираются из отдельных
+ * узлов, а не вставкой разметки: текст статьи пишут пользователи, и
+ * собирать из него HTML-строку означало бы каждый раз думать об
+ * экранировании.
+ */
+function buildSearchResultItem(result) {
+  const article = result.article;
+
+  const row = document.createElement("div");
+  row.className = "kb-search-item";
+
+  const button = buildArticleButton(article, true);
+  row.appendChild(button);
+
+  const count = document.createElement("span");
+  count.className = "kb-search-count";
+  count.textContent = result.inTitle && !result.snippets.length
+    ? "в заголовке"
+    : `совпадений: ${result.matchCount}`;
+  button.appendChild(count);
+
+  result.snippets.forEach((snippet) => {
+    const line = document.createElement("button");
+    line.type = "button";
+    line.className = "kb-search-snippet";
+    line.appendChild(document.createTextNode(snippet.before));
+
+    const mark = document.createElement("mark");
+    mark.className = "kb-mark";
+    mark.textContent = snippet.match;
+    line.appendChild(mark);
+
+    line.appendChild(document.createTextNode(snippet.after));
+    line.addEventListener("click", () => openArticleFromSearch(article));
+    row.appendChild(line);
+  });
+
+  return row;
+}
+
+/**
+ * Открывает статью из результатов поиска и ведёт к найденному месту.
+ */
+function openArticleFromSearch(article) {
+  if (editState.isEditing) {
+    showToast("Сначала сохраните или отмените правки открытой статьи");
+    return;
+  }
+  showArticle(article.relative_path);
+  renderTreePane();
+}
+
+/**
+ * Подсвечивает найденное в открытой статье и прокручивает к первому месту.
+ *
+ * Принимает основу запроса. Подсветка ставится обходом текстовых узлов, а не
+ * заменой в разметке: замена по строке испортила бы теги и атрибуты — слово
+ * из запроса может встретиться внутри имени класса или адреса ссылки.
+ */
+function highlightSearchInArticle(stem) {
+  const container = document.getElementById("kb-article-body");
+  if (!stem) {
+    return;
+  }
+
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  while (walker.nextNode()) {
+    textNodes.push(walker.currentNode);
+  }
+
+  let firstMark = null;
+  textNodes.forEach((node) => {
+    const positions = findMatches(normalizeForSearch(node.nodeValue), stem);
+    if (!positions.length) {
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    let cursor = 0;
+    positions.forEach((position) => {
+      fragment.appendChild(
+        document.createTextNode(node.nodeValue.slice(cursor, position)),
+      );
+      const mark = document.createElement("mark");
+      mark.className = "kb-mark";
+      mark.textContent = node.nodeValue.slice(position, position + stem.length);
+      fragment.appendChild(mark);
+      firstMark = firstMark || mark;
+      cursor = position + stem.length;
+    });
+    fragment.appendChild(document.createTextNode(node.nodeValue.slice(cursor)));
+    node.parentNode.replaceChild(fragment, node);
+  });
+
+  if (firstMark) {
+    firstMark.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 }

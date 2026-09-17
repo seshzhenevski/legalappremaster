@@ -1034,4 +1034,42 @@
     text-decoration-color: rgb(var(--c-red-500));
     cursor: help;
   }
+
+  /* ── Результаты поиска ─────────────────────────────────────────────── */
+  .kb-search-item + .kb-search-item {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--hairline);
+  }
+  .kb-search-count {
+    flex-shrink: 0;
+    color: var(--ink-muted);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .kb-search-snippet {
+    display: block;
+    width: 100%;
+    padding: 3px 8px 3px 30px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--ink-secondary);
+    font-size: 12px;
+    line-height: 1.5;
+    text-align: left;
+    cursor: pointer;
+  }
+  .kb-search-snippet:hover {
+    background: var(--veil);
+    color: var(--ink);
+  }
+
+  /* Подсветка найденного — и в списке, и в открытой статье. */
+  .kb-mark {
+    padding: 0 1px;
+    border-radius: 3px;
+    background: rgb(var(--c-amber-200));
+    color: rgb(var(--c-graphite));
+  }
 }
