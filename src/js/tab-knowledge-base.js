@@ -1574,6 +1574,7 @@ const EDITOR_MODE_STORAGE_KEY = "kb-editor-mode";
 
 let visualEditor = null;
 let editorMode = "visual";
+let themeObserver = null;
 
 /**
  * Читает запомненный способ правки.
@@ -1688,9 +1689,43 @@ function ensureVisualEditor(markdown) {
       isDark: isDarkTheme(),
       onChange: syncSourceFromVisual,
     });
+    watchThemeForEditor();
   } catch (error) {
     showToast(`Редактор не загрузился: ${describeError(error)}`);
     applyEditorMode("source", false);
+  }
+}
+
+/**
+ * Следит за сменой темы приложения, пока открыт визуальный редактор.
+ *
+ * Тема переключается классом на корневом элементе страницы (см. theme.js),
+ * события об этом приложение не рассылает. Наблюдатель проще: он не требует
+ * менять общий код темы ради одной вкладки. Без него редактор, открытый до
+ * переключения, оставался бы в прежнем оформлении.
+ */
+function watchThemeForEditor() {
+  if (themeObserver) {
+    return;
+  }
+  themeObserver = new MutationObserver(() => {
+    if (visualEditor) {
+      visualEditor.setDark(isDarkTheme());
+    }
+  });
+  themeObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["class"],
+  });
+}
+
+/**
+ * Прекращает следить за темой, когда визуальный редактор закрыт.
+ */
+function unwatchThemeForEditor() {
+  if (themeObserver) {
+    themeObserver.disconnect();
+    themeObserver = null;
   }
 }
 
@@ -1710,6 +1745,7 @@ function syncSourceFromVisual() {
  * Закрывает редактор «как в документе» при выходе из правки.
  */
 function disposeVisualEditor() {
+  unwatchThemeForEditor();
   if (visualEditor) {
     visualEditor.destroy();
     visualEditor = null;

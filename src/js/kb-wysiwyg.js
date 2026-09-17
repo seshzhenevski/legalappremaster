@@ -38,10 +38,9 @@ export function createVisualEditor({ container, markdown, isDark, onChange }) {
     throw new Error("Редактор не загружен");
   }
 
-  container.classList.toggle("toastui-editor-dark", Boolean(isDark));
-
   const editor = new EditorConstructor({
     el: container,
+    theme: isDark ? "dark" : "light",
     height: "100%",
     initialEditType: "wysiwyg",
     hideModeSwitch: true,
@@ -79,9 +78,17 @@ export function createVisualEditor({ container, markdown, isDark, onChange }) {
 
     /**
      * Переключает оформление редактора вслед за темой приложения.
+     *
+     * Класс тёмной темы вешается на корень самого редактора, а не на внешний
+     * контейнер: главное правило её стилей требует, чтобы оба класса стояли
+     * на одном элементе (.toastui-editor-dark.toastui-editor-defaultUI).
+     * На контейнере срабатывала лишь часть правил, и поле оставалось светлым.
      */
     setDark(dark) {
-      container.classList.toggle("toastui-editor-dark", Boolean(dark));
+      const root = container.querySelector(".toastui-editor-defaultUI");
+      if (root) {
+        root.classList.toggle("toastui-editor-dark", Boolean(dark));
+      }
     },
 
     /**
