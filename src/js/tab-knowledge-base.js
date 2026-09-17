@@ -14,7 +14,11 @@ import {
   requestKnowledgeBase,
   requestKnowledgeBaseCreate,
   requestKnowledgeBaseDelete,
+  requestKnowledgeBaseFolderCreate,
+  requestKnowledgeBaseFolderDelete,
+  requestKnowledgeBaseFolderRename,
   requestKnowledgeBaseLock,
+  requestKnowledgeBaseMove,
   requestKnowledgeBaseSave,
   requestKnowledgeBaseTrash,
   requestKnowledgeBaseTrashPurge,
@@ -24,6 +28,7 @@ import {
   requestKnowledgeBaseVersionRestore,
   requestKnowledgeBaseVersions,
 } from "./backend-api.js";
+import { askConfirm, askFolderChoice, askText } from "./kb-dialog.js";
 import { selectDirectory } from "./file-dialogs.js";
 import { loadKnowledgeBaseRoot, saveKnowledgeBaseRoot } from "./kb-settings-store.js";
 import { extractHeadings, renderMarkdown } from "./kb-markdown.js";
@@ -72,6 +77,9 @@ const knowledgeBase = {
 };
 
 let selectedRelativePath = "";
+// Выбранный раздел — место, куда попадёт новая статья. Пустая строка
+// означает корень базы.
+let selectedFolderPath = "";
 let collapsedFolders = new Set();
 
 // Состояние правки. Отпечаток запоминается на момент открытия статьи: именно
@@ -147,6 +155,14 @@ function initEditor() {
     .addEventListener("click", handleTrashClick);
   document.getElementById("kb-trash-close")
     .addEventListener("click", () => hideOverlay("kb-trash-overlay"));
+  document.getElementById("kb-move-button")
+    .addEventListener("click", handleMoveClick);
+  document.getElementById("kb-new-folder-button")
+    .addEventListener("click", handleNewFolderClick);
+  document.getElementById("kb-rename-folder-button")
+    .addEventListener("click", handleRenameFolderClick);
+  document.getElementById("kb-delete-folder-button")
+    .addEventListener("click", handleDeleteFolderClick);
 
   document.getElementById("kb-conflict-back")
     .addEventListener("click", () => hideOverlay("kb-conflict-overlay"));
@@ -404,23 +420,31 @@ function buildFolderNode(folderNode) {
   wrapper.className = "kb-folder";
 
   const isCollapsed = collapsedFolders.has(folderNode.relative_path);
+
+  const row = document.createElement("div");
+  row.className = "kb-folder-row";
+
+  // Стрелка и имя — разные кнопки: сворачивание и выбор раздела не должны
+  // срабатывать одним кликом, иначе выбрать раздел, не схлопнув его, нельзя.
   const toggle = document.createElement("button");
   toggle.type = "button";
-  toggle.className = "kb-folder-toggle";
-  toggle.dataset.kbFolder = folderNode.relative_path;
+  toggle.className = "kb-chevron-button";
+  toggle.dataset.kbFolderToggle = folderNode.relative_path;
   toggle.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
+  toggle.setAttribute("aria-label", isCollapsed ? "Раскрыть раздел" : "Свернуть раздел");
+  toggle.textContent = isCollapsed ? "▸" : "▾";
+  row.appendChild(toggle);
 
-  const chevron = document.createElement("span");
-  chevron.className = "kb-chevron";
-  chevron.textContent = isCollapsed ? "▸" : "▾";
-  toggle.appendChild(chevron);
-
-  const name = document.createElement("span");
-  name.className = "kb-folder-name";
+  const name = document.createElement("button");
+  name.type = "button";
+  name.className = "kb-folder-toggle";
+  name.dataset.kbFolder = folderNode.relative_path;
+  name.classList.toggle("kb-folder-active",
+    folderNode.relative_path === selectedFolderPath);
   name.textContent = folderNode.name;
-  toggle.appendChild(name);
+  row.appendChild(name);
 
-  wrapper.appendChild(toggle);
+  wrapper.appendChild(row);
 
   const children = buildFolderChildren(folderNode);
   children.classList.toggle("hidden", isCollapsed);
@@ -480,15 +504,24 @@ function buildArticleButton(article, showPath) {
  * дерево перерисовывается целиком, и вешать их заново было бы лишней работой.
  */
 function handleTreeClick(event) {
-  const folderToggle = event.target.closest("[data-kb-folder]");
-  if (folderToggle) {
-    const folderPath = folderToggle.dataset.kbFolder;
+  const chevron = event.target.closest("[data-kb-folder-toggle]");
+  if (chevron) {
+    const folderPath = chevron.dataset.kbFolderToggle;
     if (collapsedFolders.has(folderPath)) {
       collapsedFolders.delete(folderPath);
     } else {
       collapsedFolders.add(folderPath);
     }
     renderTreePane();
+    return;
+  }
+
+  const folderName = event.target.closest("[data-kb-folder]");
+  if (folderName) {
+    const folderPath = folderName.dataset.kbFolder;
+    // Повторный клик снимает выбор — иначе от выбранного раздела было бы
+    // не отвязаться, и новая статья всё время падала бы внутрь него.
+    selectFolder(folderPath === selectedFolderPath ? "" : folderPath);
     return;
   }
 
@@ -738,11 +771,13 @@ async function handleEditClick() {
 
     if (!lock.acquired && lock.holder && lock.holder.stale) {
       const since = formatDateTime(lock.holder.acquired_at);
-      const takeOver = window.confirm(
-        `Статью держит ${lock.holder.user} (${lock.holder.computer}) с ${since}, ` +
-        "но приложение у него, судя по всему, закрылось аварийно.\n\n" +
-        "Перехватить редактирование?",
-      );
+      const takeOver = await askConfirm({
+        title: "Статья занята, но замок выглядит брошенным",
+        text: `Её держит ${lock.holder.user} (${lock.holder.computer}) с ${since}. `
+          + "Приложение у него, судя по всему, закрылось аварийно. "
+          + "Перехватить редактирование?",
+        confirmLabel: "Перехватить",
+      });
       if (!takeOver) {
         showLockBanner(lock.holder);
         return;
@@ -821,6 +856,7 @@ function toggleEditChrome(isEditing) {
   shown("kb-edit-button", !isEditing);
   shown("kb-versions-button", !isEditing);
   shown("kb-delete-button", !isEditing);
+  shown("kb-move-button", !isEditing);
   shown("kb-save-button", isEditing);
   shown("kb-cancel-button", isEditing);
 }
@@ -876,8 +912,12 @@ async function handleCancelClick() {
   const article = knowledgeBase.articlesByPath.get(editState.relativePath);
   const hasChanges = article && editor.value !== article.body;
 
-  if (hasChanges &&
-      !window.confirm("Отменить правки? Несохранённый текст будет потерян.")) {
+  if (hasChanges && !await askConfirm({
+    title: "Отменить правки?",
+    text: "Несохранённый текст будет потерян.",
+    confirmLabel: "Отменить правки",
+    danger: true,
+  })) {
     return;
   }
 
@@ -899,7 +939,7 @@ async function handleNewArticleClick() {
   try {
     const created = await requestKnowledgeBaseCreate({
       root_path: knowledgeBase.rootPath,
-      folder_relative_path: "",
+      folder_relative_path: selectedFolderPath,
       title: "Новая статья",
     });
 
@@ -1082,11 +1122,12 @@ async function showVersion(article, version) {
  */
 async function restoreVersion(article, version) {
   const when = formatDateTime(version.saved_at);
-  if (!window.confirm(
-    `Восстановить версию от ${when}?\n\n` +
-    "Текущий текст не пропадёт: он попадёт в список версий, " +
-    "и откат можно будет отменить.",
-  )) {
+  if (!await askConfirm({
+    title: `Восстановить версию от ${when}?`,
+    text: "Текущий текст не пропадёт: он попадёт в список версий, "
+      + "и откат можно будет отменить.",
+    confirmLabel: "Восстановить",
+  })) {
     return;
   }
 
@@ -1139,7 +1180,8 @@ function hideOverlay(overlayId) {
 function setBusy(isBusy) {
   ["kb-edit-button", "kb-save-button", "kb-cancel-button",
    "kb-new-article-button", "kb-versions-button", "kb-refresh-button",
-   "kb-delete-button", "kb-trash-button"]
+   "kb-delete-button", "kb-trash-button", "kb-move-button",
+   "kb-new-folder-button", "kb-rename-folder-button", "kb-delete-folder-button"]
     .forEach((buttonId) => {
       const button = document.getElementById(buttonId);
       if (button) {
@@ -1163,10 +1205,12 @@ async function handleDeleteClick() {
   if (!article) {
     return;
   }
-  if (!window.confirm(
-    `Удалить статью «${article.title}»?\n\n` +
-    "Она попадёт в корзину, откуда её можно вернуть на прежнее место.",
-  )) {
+  if (!await askConfirm({
+    title: `Удалить статью «${article.title}»?`,
+    text: "Она попадёт в корзину, откуда её можно вернуть на прежнее место.",
+    confirmLabel: "Удалить",
+    danger: true,
+  })) {
     return;
   }
 
@@ -1289,10 +1333,12 @@ async function restoreFromTrash(entry) {
  * говорит об этом прямо.
  */
 async function purgeFromTrash(entry) {
-  if (!window.confirm(
-    `Удалить «${entry.title}» окончательно?\n\n` +
-    "Это единственное необратимое действие: вернуть статью будет нельзя.",
-  )) {
+  if (!await askConfirm({
+    title: `Удалить «${entry.title}» окончательно?`,
+    text: "Это единственное необратимое действие: вернуть статью будет нельзя.",
+    confirmLabel: "Удалить навсегда",
+    danger: true,
+  })) {
     return;
   }
 
@@ -1304,6 +1350,205 @@ async function purgeFromTrash(entry) {
     showToast("Статья удалена окончательно");
   } catch (error) {
     showToast(`Не удалось удалить: ${describeError(error)}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+// ── Разделы: выбор, создание, переименование, удаление ───────────────────────
+
+/**
+ * Отмечает раздел выбранным и показывает действия над ним.
+ *
+ * Принимает относительный путь раздела. Выбранный раздел — это то место,
+ * куда попадёт новая статья: без него «Создать» всегда клало бы статью в
+ * корень базы, а разложить её потом было бы нечем.
+ */
+function selectFolder(relativePath) {
+  selectedFolderPath = relativePath;
+  renderFolderActions();
+  renderTreePane();
+}
+
+/**
+ * Показывает или прячет панель действий над выбранным разделом.
+ */
+function renderFolderActions() {
+  const panel = document.getElementById("kb-folder-actions");
+  const label = document.getElementById("kb-selected-folder");
+
+  if (!selectedFolderPath) {
+    panel.classList.add("hidden");
+    return;
+  }
+  panel.classList.remove("hidden");
+  label.textContent = selectedFolderPath;
+}
+
+/**
+ * Собирает плоский список всех разделов базы для выбора в диалоге.
+ *
+ * Принимает узел дерева. Возвращает записи с относительным путём и подписью,
+ * включая корень базы: перенести статью в корень — обычное действие.
+ */
+function collectFolders(folderNode, collected = []) {
+  if (!folderNode) {
+    return collected;
+  }
+  if (!collected.length) {
+    collected.push({ relativePath: "", label: "Корень базы знаний" });
+  }
+  folderNode.folders.forEach((child) => {
+    collected.push({ relativePath: child.relative_path, label: child.relative_path });
+    collectFolders(child, collected);
+  });
+  return collected;
+}
+
+/**
+ * Создаёт подраздел внутри выбранного раздела.
+ */
+async function handleNewFolderClick() {
+  const name = await askText({
+    title: "Новый раздел",
+    text: `Будет создан внутри «${selectedFolderPath || "корня базы"}».`,
+    confirmLabel: "Создать",
+  });
+  if (!name) {
+    return;
+  }
+
+  setBusy(true);
+  try {
+    const result = await requestKnowledgeBaseFolderCreate(
+      knowledgeBase.rootPath, selectedFolderPath, name,
+    );
+    if (!result.created) {
+      showToast(`Раздел «${name}» уже существует`);
+      return;
+    }
+    await reloadKnowledgeBase(false);
+    selectFolder(result.relative_path);
+    showToast(`Раздел «${name}» создан`);
+  } catch (error) {
+    showToast(`Не удалось создать раздел: ${describeError(error)}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+/**
+ * Переименовывает выбранный раздел.
+ *
+ * Статьи внутри не затрагиваются: ссылки на них держатся на постоянных
+ * идентификаторах, а не на пути.
+ */
+async function handleRenameFolderClick() {
+  if (!selectedFolderPath) {
+    return;
+  }
+  const currentName = selectedFolderPath.split("/").pop();
+  const newName = await askText({
+    title: "Переименовать раздел",
+    text: "Статьи внутри раздела и ссылки на них не пострадают.",
+    initialValue: currentName,
+    confirmLabel: "Переименовать",
+  });
+  if (!newName || newName === currentName) {
+    return;
+  }
+
+  setBusy(true);
+  try {
+    const result = await requestKnowledgeBaseFolderRename(
+      knowledgeBase.rootPath, selectedFolderPath, newName,
+    );
+    await reloadKnowledgeBase(false);
+    selectFolder(result.relative_path);
+    showToast("Раздел переименован");
+  } catch (error) {
+    showToast(`Не удалось переименовать: ${describeError(error)}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+/**
+ * Удаляет выбранный раздел, если он пуст.
+ *
+ * Раздел со статьями не удаляется: удаление одним кликом унесло бы чужую
+ * работу, а восстанавливать пришлось бы по одной статье. Вместо отказа без
+ * объяснений интерфейс говорит, сколько статей мешает.
+ */
+async function handleDeleteFolderClick() {
+  if (!selectedFolderPath) {
+    return;
+  }
+  const confirmed = await askConfirm({
+    title: `Удалить раздел «${selectedFolderPath}»?`,
+    text: "Удаляются только пустые разделы. Если внутри есть статьи, "
+      + "сначала перенесите или удалите их.",
+    confirmLabel: "Удалить",
+    danger: true,
+  });
+  if (!confirmed) {
+    return;
+  }
+
+  setBusy(true);
+  try {
+    const result = await requestKnowledgeBaseFolderDelete(
+      knowledgeBase.rootPath, selectedFolderPath,
+    );
+    if (!result.deleted) {
+      showToast(
+        `В разделе ещё ${result.article_count} ст. — сначала разберитесь с ними`,
+      );
+      return;
+    }
+    selectedFolderPath = "";
+    renderFolderActions();
+    await reloadKnowledgeBase(false);
+    showToast("Раздел удалён");
+  } catch (error) {
+    showToast(`Не удалось удалить раздел: ${describeError(error)}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+/**
+ * Переносит открытую статью в другой раздел.
+ *
+ * Раздел выбирается из списка, а не вводится путём: печатать путь руками —
+ * верный способ ошибиться. Содержимое статьи при переносе не меняется.
+ */
+async function handleMoveClick() {
+  const article = knowledgeBase.articlesByPath.get(selectedRelativePath);
+  if (!article) {
+    return;
+  }
+
+  const folders = collectFolders(knowledgeBase.tree);
+  const targetPath = await askFolderChoice(
+    `Перенести «${article.title}» в раздел:`, folders,
+  );
+  if (targetPath === null) {
+    return;
+  }
+
+  setBusy(true);
+  try {
+    const moved = await requestKnowledgeBaseMove(
+      knowledgeBase.rootPath, selectedRelativePath, targetPath,
+    );
+    selectedRelativePath = moved.relative_path;
+    await reloadKnowledgeBase(false);
+    showArticle(moved.relative_path);
+    renderTreePane();
+    showToast(`Статья перенесена в «${targetPath || "корень базы"}»`);
+  } catch (error) {
+    showToast(`Не удалось перенести: ${describeError(error)}`);
   } finally {
     setBusy(false);
   }

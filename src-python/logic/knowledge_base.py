@@ -567,6 +567,42 @@ def rename_article(
     return summary
 
 
+def save_article_and_sync_filename(
+    root_path: Path,
+    article_relative_path: str,
+    properties: Dict[str, Any],
+    body: str,
+    expected_fingerprint: str | None = None,
+) -> Dict[str, Any]:
+    """
+    Сохраняет статью и приводит имя файла в соответствие заголовку.
+
+    Принимает корень базы, относительный путь, свойства, текст и отпечаток
+    содержимого. Возвращает то же, что save_article, плюс актуальный
+    относительный путь: после переименования он меняется.
+
+    Имя файла тянется за заголовком потому, что сетевую папку сотрудники
+    открывают и проводником напрямую — файл «Новая статья.md» со статьёй
+    про персональные данные внутри там выглядит как мусор. Ссылкам это не
+    вредит: они держатся на постоянном идентификаторе.
+    """
+    article_path = resolve_inside_root(root_path, article_relative_path)
+    result = save_article(
+        root_path, article_path, properties, body, expected_fingerprint,
+    )
+    if result["conflict"]:
+        return result
+
+    desired_name = article_filename(result["properties"].get("title", ""))
+    if desired_name != article_path.name:
+        target_path = unique_path(article_path.parent, desired_name)
+        os.replace(article_path, target_path)
+        article_path = target_path
+
+    result["relative_path"] = relative_path_string(article_path, root_path)
+    return result
+
+
 def move_article(
     root_path: Path, article_relative_path: str, target_folder_relative_path: str,
 ) -> Dict[str, Any]:

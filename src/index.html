@@ -1425,6 +1425,19 @@
                 title="Сменить папку базы знаний">Папка</button>
             </div>
           </div>
+          <div id="kb-folder-actions" class="hidden px-3 py-2 border-b border-slate-100">
+            <p class="text-xs text-slate-500 mb-1.5">
+              Раздел: <span id="kb-selected-folder" class="text-slate-700"></span>
+            </p>
+            <div class="flex flex-wrap gap-1.5">
+              <button id="kb-new-folder-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-md px-2 py-1 text-xs"
+                title="Создать подраздел внутри выбранного">+ Раздел</button>
+              <button id="kb-rename-folder-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-md px-2 py-1 text-xs"
+                title="Переименовать выбранный раздел">Переименовать</button>
+              <button id="kb-delete-folder-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-md px-2 py-1 text-xs"
+                title="Удалить выбранный раздел (только пустой)">Удалить</button>
+            </div>
+          </div>
           <div id="kb-tree" class="flex-1 min-h-0 overflow-y-auto thin-scroll p-2"></div>
         </div>
 
@@ -1443,6 +1456,8 @@
                   <button id="kb-edit-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm">Изменить</button>
                   <button id="kb-versions-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm"
                     title="Предыдущие версии статьи">Версии</button>
+                  <button id="kb-move-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                    title="Перенести статью в другой раздел">Перенести</button>
                   <button id="kb-delete-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm"
                     title="Удалить статью в корзину">Удалить</button>
                   <button id="kb-save-button" type="button" class="bg-blue-600 hover:bg-blue-700 text-oncolor rounded-lg px-3 py-1.5 text-sm font-medium hidden">Сохранить</button>

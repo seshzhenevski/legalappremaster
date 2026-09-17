@@ -333,3 +333,46 @@ export async function requestKnowledgeBaseTrashPurge(rootPath, entryId) {
   });
 }
 
+/**
+ * Переносит статью в другой раздел.
+ *
+ * Принимает корень базы, относительный путь статьи и раздел назначения.
+ * Содержимое файла не меняется, идентификатор сохраняется.
+ */
+export async function requestKnowledgeBaseMove(rootPath, relativePath, targetFolder) {
+  return callBackendMethod("move_kb_article", {
+    root_path: rootPath,
+    relative_path: relativePath,
+    target_folder_relative_path: targetFolder,
+  });
+}
+
+/**
+ * Создаёт раздел базы знаний внутри указанного.
+ */
+export async function requestKnowledgeBaseFolderCreate(rootPath, parentPath, name) {
+  return callBackendMethod("create_kb_folder", {
+    root_path: rootPath, parent_relative_path: parentPath, folder_name: name,
+  });
+}
+
+/**
+ * Переименовывает раздел базы знаний.
+ */
+export async function requestKnowledgeBaseFolderRename(rootPath, folderPath, newName) {
+  return callBackendMethod("rename_kb_folder", {
+    root_path: rootPath, folder_relative_path: folderPath, new_name: newName,
+  });
+}
+
+/**
+ * Удаляет пустой раздел базы знаний.
+ *
+ * Раздел со статьями не удаляется — в ответе приходит их количество.
+ */
+export async function requestKnowledgeBaseFolderDelete(rootPath, folderPath) {
+  return callBackendMethod("delete_kb_folder", {
+    root_path: rootPath, folder_relative_path: folderPath,
+  });
+}
+

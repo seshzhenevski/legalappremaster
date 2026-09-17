@@ -28,18 +28,23 @@ from logic.knowledge_base import (
     acquire_lock,
     check_lock,
     create_article,
+    create_folder,
     delete_article,
+    delete_folder,
     list_trash,
     list_versions,
     load_knowledge_base,
-    read_article,
+    move_article,
     purge_trash_entry,
+    read_article,
     read_version,
     release_lock,
+    rename_folder,
     resolve_inside_root,
     restore_article,
     restore_version,
     save_article,
+    save_article_and_sync_filename,
 )
 
 
@@ -212,13 +217,12 @@ def handle_save_kb_article(params: dict, report_progress) -> dict:
     Извлекает корень базы, относительный путь, свойства, текст и отпечаток
     содержимого, полученный при открытии статьи. Возвращает признак conflict,
     если статью тем временем правил кто-то другой, — перезаписи в этом случае
-    не происходит.
+    не происходит. Имя файла приводится в соответствие заголовку, поэтому в
+    ответе возвращается актуальный относительный путь.
     """
-    root_path = Path(params["root_path"])
-    article_path = resolve_inside_root(root_path, params["relative_path"])
-    return save_article(
-        root_path,
-        article_path,
+    return save_article_and_sync_filename(
+        Path(params["root_path"]),
+        params["relative_path"],
         params["properties"],
         params["body"],
         params.get("expected_fingerprint"),
@@ -351,6 +355,57 @@ def handle_purge_kb_trash_entry(params: dict, report_progress) -> None:
     purge_trash_entry(Path(params["root_path"]), params["entry_id"])
 
 
+def handle_move_kb_article(params: dict, report_progress) -> dict:
+    """
+    Обрабатывает перенос статьи в другой раздел.
+
+    Содержимое файла не меняется: идентификатор остаётся прежним, поэтому
+    ссылки на статью продолжают работать.
+    """
+    return move_article(
+        Path(params["root_path"]),
+        params["relative_path"],
+        params["target_folder_relative_path"],
+    )
+
+
+def handle_create_kb_folder(params: dict, report_progress) -> dict:
+    """
+    Обрабатывает создание раздела базы знаний.
+    """
+    return create_folder(
+        Path(params["root_path"]),
+        params.get("parent_relative_path", ""),
+        params["folder_name"],
+    )
+
+
+def handle_rename_kb_folder(params: dict, report_progress) -> dict:
+    """
+    Обрабатывает переименование раздела.
+
+    Статьи внутри не трогаются: их идентификаторы и ссылки на них не зависят
+    от того, как называется папка.
+    """
+    return rename_folder(
+        Path(params["root_path"]),
+        params["folder_relative_path"],
+        params["new_name"],
+    )
+
+
+def handle_delete_kb_folder(params: dict, report_progress) -> dict:
+    """
+    Обрабатывает удаление раздела.
+
+    Раздел со статьями не удаляется — возвращается их количество, чтобы
+    интерфейс объяснил, почему ничего не произошло.
+    """
+    return delete_folder(
+        Path(params["root_path"]), params["folder_relative_path"],
+    )
+
+
 # Карта методов RPC: имя метода → функция-обработчик.
 # Добавление нового метода — это одна строка здесь плюс одна функция выше.
 METHOD_HANDLERS = {
@@ -380,6 +435,10 @@ METHOD_HANDLERS = {
     "list_kb_trash": handle_list_kb_trash,
     "restore_kb_trash_entry": handle_restore_kb_trash_entry,
     "purge_kb_trash_entry": handle_purge_kb_trash_entry,
+    "move_kb_article": handle_move_kb_article,
+    "create_kb_folder": handle_create_kb_folder,
+    "rename_kb_folder": handle_rename_kb_folder,
+    "delete_kb_folder": handle_delete_kb_folder,
 }
 
 

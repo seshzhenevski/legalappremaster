@@ -45,6 +45,7 @@ from logic.knowledge_base import (
     restore_version,
     safe_child_path,
     save_article,
+    save_article_and_sync_filename,
     serialize_article,
 )
 
@@ -647,6 +648,86 @@ class BulkLoadTests(unittest.TestCase):
             loaded = load_knowledge_base(Path(empty_directory))
             self.assertTrue(loaded["available"])
             self.assertEqual(loaded["articles"], [])
+
+
+class SaveWithFilenameSyncTests(unittest.TestCase):
+    """
+    Имя файла тянется за заголовком.
+
+    Сетевую папку сотрудники открывают и проводником напрямую, поэтому файл
+    должен называться так же, как статья.
+    """
+
+    def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary_directory.name)
+        self.summary = create_article(self.root, "Раздел", "Новая статья")
+
+    def tearDown(self):
+        self.temporary_directory.cleanup()
+
+    def save(self, title, body="Текст"):
+        """Сохраняет статью с новым заголовком, как это делает редактор."""
+        relative_path = self.summary["relative_path"]
+        loaded = read_article(self.root / relative_path)
+        return save_article_and_sync_filename(
+            self.root,
+            relative_path,
+            {**loaded["properties"], "title": title},
+            body,
+            loaded["fingerprint"],
+        )
+
+    def test_filename_follows_new_title(self):
+        result = self.save("Порядок обработки запросов")
+        self.assertEqual(
+            result["relative_path"], "Раздел/Порядок обработки запросов.md",
+        )
+        self.assertFalse((self.root / self.summary["relative_path"]).exists())
+
+    def test_identity_survives_rename(self):
+        result = self.save("Другой заголовок")
+        loaded = read_article(self.root / result["relative_path"])
+        self.assertEqual(loaded["properties"]["id"], self.summary["id"])
+
+    def test_body_is_saved_together_with_rename(self):
+        result = self.save("Третий заголовок", body="Важный текст")
+        self.assertEqual(
+            read_article(self.root / result["relative_path"])["body"], "Важный текст",
+        )
+
+    def test_unchanged_title_keeps_filename(self):
+        result = self.save("Новая статья")
+        self.assertEqual(result["relative_path"], self.summary["relative_path"])
+
+    def test_forbidden_characters_do_not_break_rename(self):
+        result = self.save('Запрос: что делать? "срочно"')
+        self.assertNotIn(":", result["relative_path"])
+        self.assertNotIn("?", result["relative_path"])
+        loaded = read_article(self.root / result["relative_path"])
+        self.assertEqual(loaded["properties"]["title"], 'Запрос: что делать? "срочно"')
+
+    def test_conflict_leaves_file_untouched(self):
+        loaded = read_article(self.root / self.summary["relative_path"])
+        save_article(
+            self.root, self.root / self.summary["relative_path"],
+            loaded["properties"], "Версия коллеги",
+        )
+
+        result = save_article_and_sync_filename(
+            self.root, self.summary["relative_path"],
+            {**loaded["properties"], "title": "Новый заголовок"},
+            "Моя правка", loaded["fingerprint"],
+        )
+        self.assertTrue(result["conflict"])
+        self.assertTrue((self.root / self.summary["relative_path"]).exists())
+
+    def test_collision_does_not_overwrite_existing_article(self):
+        create_article(self.root, "Раздел", "Занятое имя")
+        result = self.save("Занятое имя")
+
+        self.assertNotEqual(result["relative_path"], "Раздел/Занятое имя.md")
+        self.assertEqual(len(list((self.root / "Раздел").glob("*.md"))), 2)
 
 
 class RestoreVersionTests(unittest.TestCase):
