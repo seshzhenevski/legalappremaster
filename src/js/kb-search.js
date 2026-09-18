@@ -28,26 +28,70 @@ export function normalizeForSearch(text) {
 }
 
 /**
+ * Часто встречающиеся окончания, от длинных к коротким.
+ *
+ * Список, а не «отбросить пару последних букв»: у слова «устав» последняя
+ * буква не окончание, и слепая обрезка превращала его в «уста», после чего
+ * поиск находил «установить» и подсвечивал обрубок слова.
+ */
+const WORD_ENDINGS = [
+  "ами", "ями", "ыми", "ими", "ого", "его", "ому", "ему",
+  "ах", "ях", "ов", "ев", "ой", "ей", "ый", "ий", "ая", "яя",
+  "ое", "ее", "ые", "ие", "ам", "ям", "ом", "ем", "ым", "им",
+  "а", "я", "ы", "и", "у", "ю", "е", "о", "ь", "й",
+];
+
+// Короче этого основу не укорачиваем: от трёх букв поиск начинает находить
+// всё подряд.
+const MIN_STEM_LENGTH = 3;
+
+/**
  * Отбрасывает окончание слова, оставляя основу для поиска.
  *
- * Принимает слово запроса. Возвращает его начало.
+ * Принимает слово запроса. Возвращает его основу.
  *
  * Полноценной морфологии здесь нет и не нужно: в юридических текстах одно и
  * то же слово встречается во всех падежах («неустойка», «неустойки»,
  * «неустойкой»), и человек, набравший любую форму, ожидает найти остальные.
- * Отбрасывание одной-двух последних букв даёт это почти всегда, а ошибается
- * в сторону более широкого поиска — лишний результат заметить легче, чем
- * пропущенный.
+ * Отбрасывается только распознанное окончание — слова вроде «устав» и
+ * «договор» остаются целиком.
  */
 export function searchStem(word) {
   const normalized = normalizeForSearch(word).trim();
-  if (normalized.length >= 6) {
-    return normalized.slice(0, -2);
-  }
-  if (normalized.length >= 4) {
-    return normalized.slice(0, -1);
+
+  for (const ending of WORD_ENDINGS) {
+    if (normalized.endsWith(ending)
+        && normalized.length - ending.length >= MIN_STEM_LENGTH) {
+      return normalized.slice(0, -ending.length);
+    }
   }
   return normalized;
+}
+
+/**
+ * Отвечает, является ли символ частью слова.
+ */
+function isWordCharacter(character) {
+  return Boolean(character) && /[\p{L}\p{N}]/u.test(character);
+}
+
+/**
+ * Расширяет совпадение до целого слова.
+ *
+ * Принимает текст и границы найденной основы. Возвращает границы слова, в
+ * которое основа попала: подсвечивать и показывать нужно слово целиком,
+ * иначе по запросу «устав» пользователь видит подсвеченным огрызок «уста».
+ */
+export function expandToWord(text, position, length) {
+  let start = position;
+  while (start > 0 && isWordCharacter(text[start - 1])) {
+    start -= 1;
+  }
+  let end = position + length;
+  while (end < text.length && isWordCharacter(text[end])) {
+    end += 1;
+  }
+  return { start: start, end: end };
 }
 
 /**
@@ -63,8 +107,12 @@ export function findMatches(normalizedText, stem) {
   }
   let index = normalizedText.indexOf(stem);
   while (index !== -1) {
-    positions.push(index);
-    index = normalizedText.indexOf(stem, index + stem.length);
+    // Совпадение засчитывается только с начала слова: иначе «иск» находился
+    // бы в «риске» и «миске», а это не то, что человек искал.
+    if (!isWordCharacter(normalizedText[index - 1])) {
+      positions.push(index);
+    }
+    index = normalizedText.indexOf(stem, index + 1);
   }
   return positions;
 }
@@ -80,6 +128,11 @@ export function findMatches(normalizedText, stem) {
  * фразы читается хуже, чем чуть более длинный фрагмент.
  */
 export function buildSnippet(text, position, length) {
+  // Показываем слово целиком, а не найденную основу.
+  const word = expandToWord(text, position, length);
+  position = word.start;
+  length = word.end - word.start;
+
   const rawStart = Math.max(0, position - SNIPPET_RADIUS);
   const rawEnd = Math.min(text.length, position + length + SNIPPET_RADIUS);
 

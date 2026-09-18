@@ -40,6 +40,7 @@ import {
 } from "./kb-markdown.js";
 import { createVisualEditor } from "./kb-wysiwyg.js";
 import {
+  expandToWord,
   findMatches,
   normalizeForSearch,
   searchArticles,
@@ -2205,15 +2206,21 @@ function highlightSearchInArticle(stem) {
     const fragment = document.createDocumentFragment();
     let cursor = 0;
     positions.forEach((position) => {
+      // Подсвечивается слово целиком: по запросу «устав» выделять «уста»
+      // и оставлять «в» снаружи — выглядит как поломка.
+      const word = expandToWord(node.nodeValue, position, stem.length);
+      if (word.start < cursor) {
+        return;
+      }
       fragment.appendChild(
-        document.createTextNode(node.nodeValue.slice(cursor, position)),
+        document.createTextNode(node.nodeValue.slice(cursor, word.start)),
       );
       const mark = document.createElement("mark");
       mark.className = "kb-mark";
-      mark.textContent = node.nodeValue.slice(position, position + stem.length);
+      mark.textContent = node.nodeValue.slice(word.start, word.end);
       fragment.appendChild(mark);
       firstMark = firstMark || mark;
-      cursor = position + stem.length;
+      cursor = word.end;
     });
     fragment.appendChild(document.createTextNode(node.nodeValue.slice(cursor)));
     node.parentNode.replaceChild(fragment, node);

@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 
 import {
   buildSnippet,
+  expandToWord,
   findMatches,
   normalizeForSearch,
   searchArticles,
@@ -27,10 +28,18 @@ test("ё и е считаются одной буквой", () => {
   assert.equal(normalizeForSearch("зачёт"), normalizeForSearch("зачет"));
 });
 
-test("основа слова отбрасывает окончание", () => {
-  assert.equal(searchStem("неустойка"), "неустой");
-  assert.equal(searchStem("неустойки"), "неустой");
+test("основа слова отбрасывает распознанное окончание", () => {
+  assert.equal(searchStem("неустойка"), "неустойк");
+  assert.equal(searchStem("неустойки"), "неустойк");
   assert.equal(searchStem("неустойкой"), "неустойк");
+});
+
+test("слово без окончания не обрезается", () => {
+  // «устав» обрезался до «уста», и поиск находил «установить».
+  assert.equal(searchStem("устав"), "устав");
+  assert.equal(searchStem("договор"), "договор");
+  assert.equal(searchStem("уставом"), "устав");
+  assert.equal(searchStem("уставе"), "устав");
 });
 
 test("короткие слова не обрезаются до бессмыслицы", () => {
@@ -86,7 +95,8 @@ test("фрагмент показывает текст вокруг найден
   const snippet = found[0].snippets[0];
 
   assert.ok(snippet.before.includes("когда"));
-  assert.equal(snippet.match, "неустой");
+  // Показывается слово целиком, а не найденная основа.
+  assert.equal(snippet.match, "неустойка");
   assert.ok(snippet.after.includes("начисляется"));
 });
 
@@ -133,3 +143,34 @@ test("buildSnippet не выходит за границы текста", () => 
   assert.equal(snippet.before, "");
   assert.equal(snippet.after, "");
 });
+
+test("поиск не цепляет слова с другим началом", () => {
+  // «устав» → «уста» находило «Установить личность заявителя».
+  const found = searchArticles(
+    [article("Проверки", "Установить личность заявителя.")], "устав",
+  );
+  assert.equal(found.length, 0);
+});
+
+test("совпадение засчитывается только с начала слова", () => {
+  const found = searchArticles([article("Риски", "Большой риск и миска.")], "иск");
+  assert.equal(found.length, 0);
+});
+
+test("слово подсвечивается целиком", () => {
+  const found = searchArticles(
+    [article("Статья", "Положения устава применяются.")], "устав",
+  );
+  assert.equal(found[0].snippets[0].match, "устава");
+});
+
+test("expandToWord берёт слово вокруг основы", () => {
+  const word = expandToWord("Положения устава применяются", 10, 5);
+  assert.equal("Положения устава применяются".slice(word.start, word.end), "устава");
+});
+
+test("expandToWord не выходит за границы текста", () => {
+  const word = expandToWord("устав", 0, 5);
+  assert.deepEqual(word, { start: 0, end: 5 });
+});
+
