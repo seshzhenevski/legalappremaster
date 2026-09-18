@@ -723,6 +723,29 @@
     font-size: 12px;
   }
 
+  /* Пометка о чужой правке (§4.4). Синяя, а не янтарная как замок: замок
+     что-то запрещает, эта пометка только сообщает и ждёт решения. */
+  .kb-banner-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgb(var(--c-blue-50));
+    color: rgb(var(--c-blue-700));
+  }
+  .kb-banner-action {
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: rgb(var(--c-blue-600));
+    font-size: 12px;
+    font-weight: 500;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .kb-banner-action:hover {
+    color: rgb(var(--c-blue-700));
+  }
+
   .kb-format-button {
     min-width: 30px;
     height: 28px;

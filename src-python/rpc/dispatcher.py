@@ -47,6 +47,7 @@ from logic.knowledge_base import (
     restore_version,
     save_article,
     save_article_and_sync_filename,
+    scan_changes,
 )
 
 
@@ -198,6 +199,18 @@ def handle_load_knowledge_base(params: dict, report_progress) -> dict:
     дальше открывает статьи и ищет по ним, не обращаясь к бэкенду.
     """
     return load_knowledge_base(Path(params["root_path"]))
+
+
+def handle_scan_kb_changes(params: dict, report_progress) -> dict:
+    """
+    Обрабатывает дешёвую проверку папки базы на чужие правки.
+
+    Извлекает путь к корневой папке и возвращает признак доступности и
+    примету состояния папки. Статьи при этом не читаются: вкладка спрашивает
+    это раз в минуту, и полная загрузка ради ответа «ничего не менялось»
+    гоняла бы по сети всю базу.
+    """
+    return scan_changes(Path(params["root_path"]))
 
 
 def handle_read_kb_article(params: dict, report_progress) -> dict:
@@ -449,6 +462,7 @@ METHOD_HANDLERS = {
     "find_claim_by_inn": handle_find_claim_by_inn,
     "load_dashboard_data": handle_load_dashboard_data,
     "load_knowledge_base": handle_load_knowledge_base,
+    "scan_kb_changes": handle_scan_kb_changes,
     "read_kb_article": handle_read_kb_article,
     "save_kb_article": handle_save_kb_article,
     "create_kb_article": handle_create_kb_article,

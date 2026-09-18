@@ -99,6 +99,7 @@ class RustPythonContractTests(unittest.TestCase):
 
             parameters = {
                 "load_knowledge_base": {"root_path": base},
+                "scan_kb_changes": {"root_path": base},
                 "read_kb_article": {"root_path": base,
                                     "relative_path": article["relative_path"]},
                 "save_kb_article": {"root_path": base,

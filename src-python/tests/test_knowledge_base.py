@@ -49,6 +49,7 @@ from logic.knowledge_base import (
     safe_child_path,
     save_article,
     save_article_and_sync_filename,
+    scan_changes,
     serialize_article,
 )
 
@@ -651,6 +652,110 @@ class BulkLoadTests(unittest.TestCase):
             loaded = load_knowledge_base(Path(empty_directory))
             self.assertTrue(loaded["available"])
             self.assertEqual(loaded["articles"], [])
+
+
+class ScanChangesTests(unittest.TestCase):
+    """
+    Дешёвая проверка чужих правок (§4.4 ТЗ).
+
+    Вкладка зовёт её раз в минуту у каждого сотрудника, поэтому статьи не
+    читаются — сравнивается примета состояния папки. Главное здесь: примета
+    не должна меняться сама по себе, иначе база будет перечитываться по
+    кругу, и обязана меняться от чужого сохранения, иначе правки коллеги
+    никто не увидит до нажатия «Обновить».
+    """
+
+    def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary_directory.name)
+        save_article(
+            self.root,
+            self.root / "Договорная работа" / "poziciya.md",
+            {"id": "kb-1", "title": "Позиция РКН"},
+            "Разъяснение регулятора.",
+        )
+
+    def tearDown(self):
+        self.temporary_directory.cleanup()
+
+    def test_unchanged_folder_keeps_signature(self):
+        first = scan_changes(self.root)
+        second = scan_changes(self.root)
+
+        self.assertTrue(first["available"])
+        self.assertTrue(first["signature"])
+        self.assertEqual(first["signature"], second["signature"])
+
+    def test_foreign_save_changes_signature(self):
+        before = scan_changes(self.root)["signature"]
+        save_article(
+            self.root,
+            self.root / "Договорная работа" / "poziciya.md",
+            {"id": "kb-1", "title": "Позиция РКН"},
+            "Разъяснение регулятора дополнено ссылкой на письмо.",
+        )
+
+        self.assertNotEqual(before, scan_changes(self.root)["signature"])
+
+    def test_new_article_changes_signature(self):
+        before = scan_changes(self.root)["signature"]
+        create_article(self.root, "Договорная работа", "Новая статья")
+
+        self.assertNotEqual(before, scan_changes(self.root)["signature"])
+
+    def test_deleted_article_changes_signature(self):
+        before = scan_changes(self.root)["signature"]
+        delete_article(self.root, self.root / "Договорная работа" / "poziciya.md")
+
+        self.assertNotEqual(before, scan_changes(self.root)["signature"])
+
+    def test_empty_new_folder_changes_signature(self):
+        # Созданный раздел не меняет ни одного файла: не считай папки —
+        # и у коллег он не появится до ручного обновления.
+        before = scan_changes(self.root)["signature"]
+        create_folder(self.root, "", "Судебная работа")
+
+        self.assertNotEqual(before, scan_changes(self.root)["signature"])
+
+    def test_lock_does_not_change_signature(self):
+        # Замок коллеги — файл в служебной папке. Если он войдёт в примету,
+        # каждый вход в правку заставит всех перечитывать базу целиком.
+        before = scan_changes(self.root)["signature"]
+        acquire_lock(self.root, "kb-1")
+
+        self.assertEqual(before, scan_changes(self.root)["signature"])
+
+    def test_version_snapshot_does_not_change_signature_by_itself(self):
+        # Снимки версий лежат в служебной папке и на примету не влияют:
+        # меняет её сама статья, а не её копия.
+        versions_folder = self.root / ".versions" / "kb-1"
+        versions_folder.mkdir(parents=True)
+        before = scan_changes(self.root)["signature"]
+        (versions_folder / "2026-09-18-1200.md").write_text("Старое", "utf-8")
+
+        self.assertEqual(before, scan_changes(self.root)["signature"])
+
+    def test_missing_root_is_reported_not_raised(self):
+        scanned = scan_changes(self.root / "нет такой папки")
+
+        self.assertFalse(scanned["available"])
+        self.assertEqual(scanned["signature"], "")
+
+    def test_load_returns_the_same_signature(self):
+        # Вкладка сравнивает примету из проверки с приметой, оставшейся от
+        # загрузки. Разойдись они по способу подсчёта — база перечитывалась
+        # бы каждую минуту без единой чужой правки.
+        self.assertEqual(
+            load_knowledge_base(self.root)["signature"],
+            scan_changes(self.root)["signature"],
+        )
+
+    def test_articles_are_not_read_during_scan(self):
+        # Нечитаемая статья не должна ронять проверку: на общем диске часть
+        # путей бывает недоступна, а проверка идёт в фоне у всех.
+        (self.root / "Договорная работа" / "битая.md").write_bytes(b"\xff\xfe\x00")
+
+        self.assertTrue(scan_changes(self.root)["available"])
 
 
 class SaveWithFilenameSyncTests(unittest.TestCase):

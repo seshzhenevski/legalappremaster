@@ -419,8 +419,14 @@ def load_knowledge_base(root_path: Path) -> Dict[str, Any]:
             "root": str(root_path),
             "tree": {"name": "", "relative_path": "", "folders": [], "articles": []},
             "articles": [],
+            "signature": "",
         }
 
+    # Примета состояния снимается ДО чтения статей. Если кто-то сохранит
+    # статью, пока идёт загрузка, примета окажется старее содержимого, и
+    # вкладка лишний раз перечитает базу. Обратный порядок дал бы обратное:
+    # примету новее содержимого, и чужая правка осталась бы незамеченной.
+    signature = folder_signature(canonical_root)
     collected_articles: List[Dict[str, Any]] = []
     tree = build_folder_node(canonical_root, canonical_root, collected_articles)
     return {
@@ -429,7 +435,91 @@ def load_knowledge_base(root_path: Path) -> Dict[str, Any]:
         "tree": tree,
         "articles": collected_articles,
         "documents": collect_document_availability(canonical_root, collected_articles),
+        "signature": signature,
     }
+
+
+def collect_signature_parts(
+    folder_path: Path, prefix: str, parts: List[str],
+) -> None:
+    """
+    Обходит папку и складывает в список приметы каждой статьи и подпапки.
+
+    Принимает папку, относительный путь до неё (пустой для корня) и список,
+    в который дописываются строки вида «путь<TAB>время<TAB>размер». Файлы не
+    читаются: берутся только сведения, которые файловая система отдаёт вместе
+    с именем, поэтому обход стоит на порядок дешевле полной загрузки.
+
+    Относительный путь собирается из имён по пути вниз, а не вычисляется
+    заново для каждой записи: приведение пути к каноническому виду на сетевом
+    диске — обращение к серверу, и на сотне статей это заметно.
+
+    Папки попадают в список наравне со статьями: пустой созданный раздел не
+    меняет ни одного файла, и без этого коллеги его бы не увидели.
+    """
+    try:
+        entries = list(os.scandir(folder_path))
+    except OSError:
+        return
+
+    for entry in entries:
+        relative = f"{prefix}{entry.name}"
+        try:
+            if entry.is_dir():
+                if is_service_directory(entry.name):
+                    continue
+                parts.append(f"{relative}/")
+                collect_signature_parts(Path(entry.path), f"{relative}/", parts)
+            elif entry.name.lower().endswith(ARTICLE_SUFFIX):
+                info = entry.stat()
+                parts.append(f"{relative}\t{info.st_mtime_ns}\t{info.st_size}")
+        except OSError:
+            continue
+
+
+def folder_signature(root_path: Path) -> str:
+    """
+    Сворачивает состояние папки базы в одну строку-примету.
+
+    Принимает корень базы. Возвращает хеш от списка статей и разделов с
+    временем изменения и размером. Совпали приметы — в папке ничего не
+    менялось; разошлись — что-то изменилось, и базу стоит перечитать.
+
+    Здесь намеренно используется время изменения, хотя `content_fingerprint`
+    его сторонится: там от него зависит сохранность чужой работы, а здесь —
+    только удобство. Худшее, что даёт округление отметки времени на сетевом
+    диске, — чужая правка подхватится не через минуту, а позже; от потери
+    данных по-прежнему защищает сверка отпечатка при сохранении.
+    """
+    parts: List[str] = []
+    collect_signature_parts(root_path, "", parts)
+    parts.sort()
+    return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
+
+
+def scan_changes(root_path: Path) -> Dict[str, Any]:
+    """
+    Отвечает, менялось ли что-нибудь в папке базы, не читая статей.
+
+    Принимает корень базы. Возвращает признак доступности и примету
+    состояния папки. Вкладка зовёт это раз в минуту и при открытии: полная
+    загрузка ради вопроса «не изменилось ли?» стоила бы чтения всех статей
+    с сетевого диска каждую минуту у каждого сотрудника.
+
+    Недоступная папка возвращается признаком, а не исключением, по той же
+    причине, что и в load_knowledge_base: отключённый диск — обычное дело.
+    """
+    try:
+        canonical_root = root_path.resolve()
+        is_available = canonical_root.is_dir()
+    except OSError:
+        canonical_root = root_path
+        is_available = False
+
+    if not is_available:
+        return {"available": False, "signature": ""}
+
+    return {"available": True, "signature": folder_signature(canonical_root)}
 
 
 # ── Создание, переименование и перенос ───────────────────────────────────────

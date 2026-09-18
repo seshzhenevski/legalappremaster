@@ -22,6 +22,7 @@ import {
   requestKnowledgeBaseLock,
   requestKnowledgeBaseMove,
   requestKnowledgeBaseSave,
+  requestKnowledgeBaseScan,
   requestKnowledgeBaseTrash,
   requestKnowledgeBaseTrashPurge,
   requestKnowledgeBaseTrashRestore,
@@ -52,6 +53,12 @@ import { showToast } from "./toast.js";
 // это запуск процесса, а запись на отключённый сетевой диск может встать
 // надолго; закрытие окна ждать этого не должно.
 const CLOSE_UNLOCK_TIMEOUT_MS = 4000;
+
+// Как часто вкладка проверяет, не правил ли базу кто-то ещё (§4.4 ТЗ).
+// Проверка дешёвая — читает только приметы файлов, а не сами статьи, — но
+// каждая всё равно стоит запуска процесса, поэтому чаще раза в минуту
+// спрашивать незачем: база знаний меняется несколько раз в день.
+const REMOTE_CHECK_INTERVAL_MS = 60_000;
 
 // Подписи и оформление статусов статьи из семантической палитры приложения.
 const STATUS_STYLES = {
@@ -91,7 +98,24 @@ const knowledgeBase = {
   documents: new Map(),
   tree: null,
   isLoaded: false,
+  // Примета состояния папки на момент загрузки: с ней сравнивается то, что
+  // приносит фоновая проверка. Совпали — на диске ничего не менялось.
+  signature: "",
 };
+
+// Что именно сейчас показано в правой колонке. Нужно, чтобы после фоновой
+// загрузки отличить «статью изменил коллега» от «статья та же»: в памяти
+// к этому времени уже лежит новый текст, а на экране — старый.
+const shownArticle = {
+  id: "",
+  fingerprint: "",
+};
+
+let remoteCheckTimer = null;
+let isCheckingRemoteChanges = false;
+// Обращение к бэкенду — запуск процесса; фоновая проверка не лезет туда,
+// пока вкладка занята ответом на действие пользователя.
+let isBackendBusy = false;
 
 let selectedRelativePath = "";
 // Выбранный раздел — место, куда попадёт новая статья. Пустая строка
@@ -132,6 +156,9 @@ export function initKnowledgeBaseTab() {
   document.querySelectorAll("[data-kb-choose-root]").forEach((button) => {
     button.addEventListener("click", handleRootSelection);
   });
+
+  document.getElementById("kb-update-banner-action")
+    .addEventListener("click", handleRemoteBannerAction);
 
   document.getElementById("kb-tree").addEventListener("click", handleTreeClick);
   document.getElementById("kb-article-body")
@@ -246,11 +273,13 @@ async function releaseLockBeforeClosing() {
 /**
  * Загружает базу при первом открытии вкладки.
  *
- * Повторные переключения на вкладку ничего не перечитывают — для этого есть
- * кнопка «Обновить».
+ * При повторном переключении база из памяти не перечитывается, но §4.4 ТЗ
+ * требует проверить, не правил ли её кто-то ещё: человек мог просидеть час
+ * в другой вкладке, а коллега тем временем дописал инструкцию.
  */
 async function handleTabOpened() {
   if (knowledgeBase.isLoaded) {
+    await checkRemoteChanges();
     return;
   }
   knowledgeBase.rootPath = await loadKnowledgeBaseRoot();
@@ -295,16 +324,7 @@ async function reloadKnowledgeBase(announceResult) {
       return;
     }
 
-    knowledgeBase.tree = loaded.tree;
-    knowledgeBase.articles = loaded.articles;
-    knowledgeBase.articlesByPath = new Map(
-      loaded.articles.map((article) => [article.relative_path, article]),
-    );
-    knowledgeBase.documents = new Map(
-      (loaded.documents || []).map((item) => [item.target, item]),
-    );
-    knowledgeBase.isLoaded = true;
-    rebuildLinkIndex();
+    applyLoadedBase(loaded);
 
     showPane("kb-content-pane");
     renderTreePane();
@@ -348,6 +368,205 @@ function restoreSelection() {
     selectedRelativePath = "";
     showEmptyArticle();
   }
+}
+
+/**
+ * Раскладывает прочитанную базу по памяти вкладки.
+ *
+ * Принимает ответ бэкенда. Отдельная функция потому, что база попадает в
+ * память двумя путями: по действию пользователя, с экраном загрузки, и в
+ * фоне, когда чужие правки подхватываются молча. Отличаются они только тем,
+ * что рисуется на экране, а память заполняется одинаково.
+ */
+function applyLoadedBase(loaded) {
+  knowledgeBase.tree = loaded.tree;
+  knowledgeBase.articles = loaded.articles;
+  knowledgeBase.articlesByPath = new Map(
+    loaded.articles.map((article) => [article.relative_path, article]),
+  );
+  knowledgeBase.documents = new Map(
+    (loaded.documents || []).map((item) => [item.target, item]),
+  );
+  knowledgeBase.signature = loaded.signature || "";
+  knowledgeBase.isLoaded = true;
+  rebuildLinkIndex();
+  startRemoteWatch();
+}
+
+// ── Чужие правки (§4.4) ──────────────────────────────────────────────────────
+// Живого совместного редактирования здесь нет и не будет: файлы на общем
+// диске его не дают. Вместо него — регулярный вопрос «в папке что-нибудь
+// менялось?». Если менялось, дерево обновляется само, а открытая статья
+// только помечается: текст из-под читающего не подменяется — он может
+// сверять по нему документ, и абзацы, уехавшие в момент чтения, — худшее,
+// что можно сделать.
+
+/**
+ * Заводит повторяющуюся проверку чужих правок.
+ *
+ * Вызывается при каждой загрузке базы и ничего не делает, если проверка уже
+ * заведена: иначе после десятка сохранений вкладка опрашивала бы диск
+ * десятком таймеров сразу.
+ */
+function startRemoteWatch() {
+  if (remoteCheckTimer) {
+    return;
+  }
+  remoteCheckTimer = setInterval(checkRemoteChanges, REMOTE_CHECK_INTERVAL_MS);
+}
+
+/**
+ * Спрашивает у бэкенда, менялось ли что-нибудь в папке базы.
+ *
+ * Вопрос дешёвый: статьи не читаются, сравниваются приметы файлов. Полная
+ * загрузка заказывается, только когда примета разошлась с оставшейся от
+ * прошлого чтения.
+ */
+async function checkRemoteChanges() {
+  if (!knowledgeBase.isLoaded || !knowledgeBase.rootPath) {
+    return;
+  }
+  // Не мешаем: вкладка не на виду, человек правит статью (её сохранность
+  // стережёт сверка отпечатка при сохранении, §4.2) или вкладка уже ждёт
+  // от бэкенда ответа на действие пользователя.
+  if (!isKnowledgeBaseVisible() || editState.isEditing || isBackendBusy) {
+    return;
+  }
+  if (isCheckingRemoteChanges) {
+    return;
+  }
+
+  isCheckingRemoteChanges = true;
+  try {
+    const scanned = await requestKnowledgeBaseScan(knowledgeBase.rootPath);
+    if (!scanned.available || !scanned.signature) {
+      return;
+    }
+    if (scanned.signature === knowledgeBase.signature) {
+      return;
+    }
+    await pickUpRemoteChanges();
+  } catch (error) {
+    // Фоновая проверка молчит. Сетевой диск, отвалившийся на минуту, — не
+    // повод показывать читающему окно с ошибкой; на настоящую недоступность
+    // он наткнётся, как только сам что-нибудь сделает.
+    console.warn("Проверка чужих правок не удалась:", describeError(error));
+  } finally {
+    isCheckingRemoteChanges = false;
+  }
+}
+
+/**
+ * Перечитывает базу молча и обновляет дерево, не трогая открытую статью.
+ *
+ * Экран загрузки не показывается и выбор не восстанавливается: человек в
+ * это время читает, и подменять под ним панель нельзя. Меняется только
+ * дерево слева, а изменившаяся статья получает пометку.
+ */
+async function pickUpRemoteChanges() {
+  const loaded = await requestKnowledgeBase(knowledgeBase.rootPath);
+
+  // Чтение базы — это секунды, за которые человек успевает нажать
+  // «Изменить», а диск — отключиться. В обоих случаях лучше ничего не
+  // делать и спросить снова через минуту.
+  if (!loaded.available || editState.isEditing) {
+    return;
+  }
+
+  applyLoadedBase(loaded);
+  markOpenArticleIfChanged();
+  renderTreeKeepingScroll();
+}
+
+/**
+ * Помечает открытую статью, если её тем временем изменил кто-то другой.
+ *
+ * Сравнивается отпечаток показанного текста с тем, что лежит в памяти после
+ * фоновой загрузки. Статья ищется по постоянному идентификатору: коллега
+ * мог её переименовать или перенести, и по пути она бы «пропала».
+ */
+function markOpenArticleIfChanged() {
+  if (!shownArticle.id) {
+    return;
+  }
+
+  const fresh = knowledgeBase.articlesById.get(shownArticle.id.toLowerCase());
+  if (!fresh) {
+    showRemoteBanner("Статья удалена другим пользователем.", "Закрыть");
+    return;
+  }
+
+  selectedRelativePath = fresh.relative_path;
+  if (fresh.fingerprint !== shownArticle.fingerprint) {
+    showRemoteBanner("Статья обновлена.", "Перезагрузить");
+  }
+}
+
+/**
+ * Показывает статью заново по просьбе из пометки.
+ *
+ * Обращения к бэкенду здесь нет: свежий текст уже в памяти, его принесла
+ * фоновая проверка, — поэтому перезагрузка мгновенная. Удалённая статья
+ * закрывается, и правая колонка возвращается к приглашению выбрать статью.
+ */
+function handleRemoteBannerAction() {
+  hideRemoteBanner();
+
+  const fresh = shownArticle.id
+    ? knowledgeBase.articlesById.get(shownArticle.id.toLowerCase())
+    : null;
+  if (!fresh) {
+    selectedRelativePath = "";
+    showEmptyArticle();
+    renderTreePane();
+    return;
+  }
+
+  showArticle(fresh.relative_path);
+  renderTreePane();
+}
+
+/**
+ * Показывает ненавязчивую пометку над статьёй.
+ *
+ * Принимает текст и подпись кнопки: пометка одна, а поводов два — статью
+ * изменили или удалили, и предлагать «Перезагрузить» удалённую нельзя.
+ */
+function showRemoteBanner(text, actionLabel) {
+  document.getElementById("kb-update-banner-text").textContent = text;
+  document.getElementById("kb-update-banner-action").textContent = actionLabel;
+  document.getElementById("kb-update-banner").classList.remove("hidden");
+}
+
+/**
+ * Убирает пометку о чужой правке.
+ */
+function hideRemoteBanner() {
+  document.getElementById("kb-update-banner").classList.add("hidden");
+}
+
+/**
+ * Отвечает, открыта ли сейчас вкладка базы знаний.
+ *
+ * Пока человек в другой вкладке, спрашивать диск не о чем: вернувшись, он
+ * всё равно попадёт на проверку при открытии вкладки.
+ */
+function isKnowledgeBaseVisible() {
+  const panel = document.getElementById("panel-knowledge-base");
+  return Boolean(panel) && !panel.classList.contains("hidden");
+}
+
+/**
+ * Перерисовывает дерево, оставляя его прокрутку на месте.
+ *
+ * Фоновое обновление приходит само, без ведома человека, и дерево,
+ * прыгнувшее к началу посреди чтения списка, выглядело бы поломкой.
+ */
+function renderTreeKeepingScroll() {
+  const container = document.getElementById("kb-tree");
+  const scrollOffset = container.scrollTop;
+  renderTreePane();
+  container.scrollTop = scrollOffset;
 }
 
 /**
@@ -567,6 +786,11 @@ function showArticle(relativePath) {
     return;
   }
   selectedRelativePath = relativePath;
+  // Отпечаток показанного текста: по нему фоновая проверка потом поймёт,
+  // что на диске лежит уже не то, что человек видит перед собой.
+  shownArticle.id = article.id || "";
+  shownArticle.fingerprint = article.fingerprint || "";
+  hideRemoteBanner();
 
   document.getElementById("kb-article-placeholder").classList.add("hidden");
   document.getElementById("kb-article").classList.remove("hidden");
@@ -671,6 +895,9 @@ function renderTableOfContents(markdownText) {
  * Показывает приглашение выбрать статью вместо пустой правой колонки.
  */
 function showEmptyArticle() {
+  shownArticle.id = "";
+  shownArticle.fingerprint = "";
+  hideRemoteBanner();
   document.getElementById("kb-article").classList.add("hidden");
   document.getElementById("kb-article-placeholder").classList.remove("hidden");
 }
@@ -1227,6 +1454,7 @@ function hideOverlay(overlayId) {
  * без явной отметки пользователь успевает нажать кнопку второй раз.
  */
 function setBusy(isBusy) {
+  isBackendBusy = isBusy;
   ["kb-edit-button", "kb-save-button", "kb-cancel-button",
    "kb-new-article-button", "kb-versions-button", "kb-refresh-button",
    "kb-delete-button", "kb-trash-button", "kb-move-button",
