@@ -82,9 +82,14 @@ class RustPythonContractTests(unittest.TestCase):
         обращении к методу. Юнит-тесты логики такое не ловят по определению.
         """
         import tempfile
+        from pathlib import Path
         from rpc.dispatcher import METHOD_HANDLERS
 
         with tempfile.TemporaryDirectory() as base:
+            # Документ для проверки вложения: метод копирует реальный файл.
+            source_document = Path(base) / "Договор.docx"
+            source_document.write_bytes(b"docx")
+
             # Заготовки: создаём раздел и статью, чтобы методам было с чем работать.
             article = json.loads(process_single_request(json.dumps({
                 "id": 1, "method": "create_kb_article",
@@ -119,6 +124,11 @@ class RustPythonContractTests(unittest.TestCase):
                                      "new_name": "Переименованный"},
                 "delete_kb_folder": {"root_path": base,
                                      "folder_relative_path": "Переименованный"},
+                "attach_kb_document": {"root_path": base,
+                                       "article_id": article["id"],
+                                       "source_path": str(source_document)},
+                "check_kb_document": {"root_path": base,
+                                      "target": ".assets/kb-1/Нет.docx"},
             }
 
             kb_methods = [name for name in METHOD_HANDLERS
