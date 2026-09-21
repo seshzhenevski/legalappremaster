@@ -1473,14 +1473,17 @@
 
               <!-- Правка заголовка и статуса: только в режиме редактирования -->
               <div id="kb-edit-properties" class="hidden flex flex-wrap items-center gap-2">
-                <input id="kb-edit-title" type="text" class="flex-1 min-w-[200px]"
+                <input id="kb-edit-title" type="text"
+                  class="flex-1 min-w-[200px] px-3 py-2 border border-slate-300 rounded-lg text-sm"
                   placeholder="Заголовок статьи">
-                <select id="kb-edit-status">
+                <select id="kb-edit-status"
+                  class="px-3 py-2 border border-slate-300 rounded-lg text-sm">
                   <option value="актуально">актуально</option>
                   <option value="устарело">устарело</option>
                   <option value="черновик">черновик</option>
                 </select>
-                <input id="kb-edit-icon" type="text" maxlength="4" class="w-16 text-center"
+                <input id="kb-edit-icon" type="text" maxlength="4"
+                  class="w-16 text-center px-2 py-2 border border-slate-300 rounded-lg text-sm"
                   placeholder="значок" title="Значок статьи в дереве">
               </div>
 

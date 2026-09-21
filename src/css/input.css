@@ -903,6 +903,10 @@
   .kb-modal-input {
     width: 100%;
     margin-top: 14px;
+    padding: 8px 12px;
+    border: 1px solid rgb(var(--c-slate-300));
+    border-radius: 8px;
+    font-size: 13px;
   }
   .kb-modal-actions {
     display: flex;
