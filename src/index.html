@@ -1420,15 +1420,31 @@
             <input id="kb-search" type="search" autocomplete="off"
               placeholder="Поиск по заголовкам и тексту"
               class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+            <!-- Действия панели — иконками, как в остальном приложении.
+                 Подписи занимали всю ширину узкой колонки; смысл каждого
+                 действия читается по значку, а слово осталось в подсказке
+                 и в aria-label, чтобы кнопка не онемела для экранного диктора. -->
             <div class="flex gap-2">
-              <button id="kb-refresh-button" type="button" class="flex-1 bg-slate-100 hover:bg-slate-200 rounded-lg py-2 text-sm"
-                title="Перечитать базу с сетевого диска">Обновить</button>
-              <button id="kb-new-article-button" type="button" class="px-3 bg-slate-100 hover:bg-slate-200 rounded-lg py-2 text-sm"
-                title="Создать статью в выбранном разделе">Создать</button>
-              <button id="kb-trash-button" type="button" class="px-3 bg-slate-100 hover:bg-slate-200 rounded-lg py-2 text-sm"
-                title="Корзина: удалённые статьи">Корзина</button>
-              <button type="button" data-kb-choose-root class="px-3 bg-slate-100 hover:bg-slate-200 rounded-lg py-2 text-sm"
-                title="Сменить папку базы знаний">Папка</button>
+              <button id="kb-refresh-button" type="button"
+                class="flex items-center justify-center w-9 h-9 bg-slate-100 hover:bg-slate-200 rounded-lg"
+                aria-label="Обновить" title="Обновить: перечитать базу с сетевого диска">
+                <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /> <path d="M21 3v5h-5" /> <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /> <path d="M8 16H3v5" /></svg>
+              </button>
+              <button id="kb-new-article-button" type="button"
+                class="flex items-center justify-center w-9 h-9 bg-slate-100 hover:bg-slate-200 rounded-lg"
+                aria-label="Создать статью" title="Создать статью в выбранном разделе">
+                <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" /> <path d="M14 2v5a1 1 0 0 0 1 1h5" /> <path d="M9 15h6" /> <path d="M12 18v-6" /></svg>
+              </button>
+              <button id="kb-trash-button" type="button"
+                class="flex items-center justify-center w-9 h-9 bg-slate-100 hover:bg-slate-200 rounded-lg"
+                aria-label="Корзина" title="Корзина: удалённые статьи">
+                <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 11v6" /> <path d="M14 11v6" /> <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /> <path d="M3 6h18" /> <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+              </button>
+              <button data-kb-choose-root type="button"
+                class="flex items-center justify-center w-9 h-9 bg-slate-100 hover:bg-slate-200 rounded-lg"
+                aria-label="Сменить папку" title="Сменить папку базы знаний">
+                <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" /></svg>
+              </button>
             </div>
           </div>
           <div id="kb-folder-actions" class="hidden px-3 py-2 border-b border-slate-100">
