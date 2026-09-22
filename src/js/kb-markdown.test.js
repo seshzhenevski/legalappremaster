@@ -381,3 +381,50 @@ test("dropRedundantEscapes не трогает моноширинный учас
   const source = String.raw`текст \(в скобках\) и код ` + "`a\\,b`";
   assert.equal(dropRedundantEscapes(source), "текст (в скобках) и код `a\\,b`");
 });
+
+// ── Блоки внутри цитаты ─────────────────────────────────────────────────────
+// Редактор «как в документе» делает цитату со списком одной кнопкой, а
+// отрисовщик разбирал содержимое цитаты только как строки текста: список
+// оставался звёздочками, и первая пара звёздочек съедалась курсивом.
+
+test("список внутри цитаты остаётся списком", () => {
+  const html = renderMarkdown([
+    "> Перечень документов:",
+    ">",
+    "> * Акт приёма-передачи;",
+    "> * УПД на сервисные сборы;",
+  ].join("\n"));
+
+  assert.ok(html.includes("<blockquote"));
+  assert.ok(html.includes("<ul"));
+  assert.equal(html.match(/<li>/g).length, 2);
+  assert.ok(!html.includes("<em>"));
+  assert.ok(!html.includes("*"));
+});
+
+test("обычная цитата остаётся цитатой", () => {
+  const html = renderMarkdown("> Сведения предоставляются в течение 30 дней.");
+  assert.ok(html.includes("<blockquote"));
+  assert.ok(html.includes("Сведения предоставляются в течение 30 дней."));
+});
+
+test("две строки цитаты подряд остаются одним абзацем", () => {
+  const html = renderMarkdown("> Первая строка\n> вторая строка");
+  assert.ok(html.includes("Первая строка<br>вторая строка"));
+});
+
+test("заголовок внутри цитаты отрисовывается заголовком", () => {
+  const html = renderMarkdown("> ## Важно\n>\n> текст");
+  assert.ok(html.includes("<h2"));
+});
+
+test("вложенная цитата отрисовывается вложенной", () => {
+  const html = renderMarkdown("> внешняя\n>\n> > внутренняя");
+  assert.equal(html.match(/<blockquote/g).length, 2);
+});
+
+test("опасный HTML внутри цитаты экранируется ровно один раз", () => {
+  const html = renderMarkdown("> <script>alert(1)</script>");
+  assert.ok(html.includes("&lt;script&gt;"));
+  assert.ok(!html.includes("&amp;lt;"));
+});

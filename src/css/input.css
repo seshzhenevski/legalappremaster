@@ -665,6 +665,11 @@
     border-left: 3px solid rgb(var(--c-slate-300));
     color: var(--ink-secondary);
   }
+  /* Внутри цитаты теперь могут стоять абзацы и списки, а правило отступов
+     .kb-body > * + * до них не достаёт: оно про прямых детей статьи. */
+  .kb-quote > * + * {
+    margin-top: 10px;
+  }
   .kb-rule {
     border: none;
     border-top: 1px solid var(--hairline);

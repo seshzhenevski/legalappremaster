@@ -369,8 +369,14 @@ export function renderMarkdown(markdownText, articlesById, documents) {
 
   function flushQuote() {
     if (quoteLines.length) {
+      // Содержимое цитаты разбирается теми же правилами, что и статья: внутри
+      // цитаты встречаются списки, а раньше они оставались строками со
+      // звёздочками — да ещё и первая пара звёздочек съедалась курсивом, так
+      // что список превращался в наклонный текст с одинокой звёздочкой в
+      // конце. Редактор «как в документе» такие цитаты со списками делает
+      // одной кнопкой, то есть случай обычный, а не выдуманный.
       htmlParts.push(
-        `<blockquote class="kb-quote">${renderInline(quoteLines.join("<br>"), articlesById, documents)}</blockquote>`,
+        `<blockquote class="kb-quote">${renderMarkdown(quoteLines.join("\n"), articlesById, documents)}</blockquote>`,
       );
       quoteLines = [];
     }
@@ -495,7 +501,10 @@ export function renderMarkdown(markdownText, articlesById, documents) {
       flushParagraph();
       flushList();
       flushTable();
-      quoteLines.push(escapeHtml(quoteMatch[1]));
+      // Строка кладётся как есть: экранирование сделает разбор содержимого,
+      // иначе «&lt;» из статьи экранировалось бы дважды и показалось бы
+      // «&amp;lt;».
+      quoteLines.push(quoteMatch[1]);
       continue;
     }
 
