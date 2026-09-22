@@ -125,6 +125,36 @@ class ParseArticleTests(unittest.TestCase):
         self.assertEqual(parsed["properties"]["отдел"], "договорной")
 
 
+class ArticlePropertyRoundTripTests(unittest.TestCase):
+    """
+    Свойства, которых нет в нашем списке, переживают круг через диск.
+
+    Выключатель оглавления (toc) — первое такое свойство, которое пишет само
+    приложение. Приведись оно к строке «False» при чтении, вкладка увидела бы
+    непустую строку и оглавление осталось бы на месте.
+    """
+
+    def test_boolean_property_survives_round_trip(self):
+        file_text = serialize_article(
+            {"id": "kb-1", "title": "Памятка", "toc": False}, "Текст",
+        )
+        parsed = parse_article(file_text)
+
+        self.assertIs(parsed["properties"]["toc"], False)
+
+    def test_boolean_property_is_written_as_yaml_boolean(self):
+        # Файл читают и правят в проводнике: «toc: false» понятно человеку,
+        # «toc: 'False'» — уже нет.
+        file_text = serialize_article({"id": "kb-1", "toc": False}, "Текст")
+
+        self.assertIn("toc: false", file_text)
+
+    def test_property_written_by_hand_survives(self):
+        parsed = parse_article("---\nid: kb-1\ntoc: нет\n---\nТекст")
+
+        self.assertEqual(parsed["properties"]["toc"], "нет")
+
+
 class SerializeArticleTests(unittest.TestCase):
     def test_russian_text_is_not_escaped(self):
         file_text = serialize_article({"title": "Персональные данные"}, "Текст")

@@ -605,8 +605,10 @@
   .kb-toc-item:hover {
     color: var(--accent);
   }
-  .kb-toc-level-2 { padding-left: 32px; }
-  .kb-toc-level-3 { padding-left: 44px; }
+  /* Размеры заголовков и отступы пунктов оглавления живут в
+     kb-editor-theme.css: имена этих классов собираются в JS
+     (`kb-heading-${level}`), Tailwind их в исходниках не видит и правила
+     молча выбрасывает при сборке. */
 
   /* ── Текст статьи ── */
   .kb-body {
@@ -624,9 +626,6 @@
   .kb-body > .kb-heading {
     margin-top: 22px;
   }
-  .kb-heading-1 { font-size: 20px; }
-  .kb-heading-2 { font-size: 17px; }
-  .kb-heading-3 { font-size: 15px; }
 
   .kb-list {
     padding-left: 22px;

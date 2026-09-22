@@ -61,6 +61,11 @@ const CLOSE_UNLOCK_TIMEOUT_MS = 4000;
 // спрашивать незачем: база знаний меняется несколько раз в день.
 const REMOTE_CHECK_INTERVAL_MS = 60_000;
 
+// До какого уровня заголовки попадают в оглавление. Четвёртый уровень и
+// глубже — это уже мелкие пункты внутри раздела; в оглавлении они превращают
+// его во вторую статью, по которой ничего не найти.
+const TOC_MAX_LEVEL = 3;
+
 // Подписи и оформление статусов статьи из семантической палитры приложения.
 const STATUS_STYLES = {
   "актуально": "kb-status kb-status-current",
@@ -992,7 +997,7 @@ function showArticle(relativePath) {
 
   renderArticlePath(article);
   renderArticleProperties(article);
-  renderTableOfContents(article.body);
+  renderTableOfContents(article);
   renderBacklinks(article);
   highlightSearchInArticle(searchStem(currentSearchQuery()));
 }
@@ -1028,6 +1033,22 @@ function renderArticleProperties(article) {
 }
 
 /**
+ * Отвечает, отключено ли оглавление у статьи.
+ *
+ * Принимает свойства статьи. Выключателем служит свойство toc в блоке
+ * свойств файла. Значение принимается и логическим, и словом: свойства
+ * правят не только из приложения — файл лежит в общей папке, и «toc: нет»
+ * человек напишет скорее, чем «toc: false».
+ */
+function isTableOfContentsDisabled(properties) {
+  const value = (properties || {}).toc;
+  if (value === false) {
+    return true;
+  }
+  return ["false", "нет", "no", "0"].includes(String(value).trim().toLowerCase());
+}
+
+/**
  * Приводит дату из свойств статьи к виду «12.09.2026 14:30».
  *
  * Принимает строку ISO. Неразобранное значение возвращает как есть —
@@ -1048,14 +1069,21 @@ function formatDateTime(isoText) {
 /**
  * Строит оглавление статьи из её заголовков.
  *
- * Принимает текст статьи. Оглавление появляется только у длинных статей —
- * у документа с одним заголовком оно лишь занимает место.
+ * Принимает карточку статьи. Оглавление появляется только у длинных статей —
+ * у документа с одним заголовком оно лишь занимает место — и только если
+ * автор не отключил его свойством toc.
  */
-function renderTableOfContents(markdownText) {
+function renderTableOfContents(article) {
   const container = document.getElementById("kb-article-toc");
   container.innerHTML = "";
 
-  const headings = extractHeadings(markdownText);
+  if (isTableOfContentsDisabled(article.properties)) {
+    container.classList.add("hidden");
+    return;
+  }
+
+  const headings = extractHeadings(article.body)
+    .filter((heading) => heading.level <= TOC_MAX_LEVEL);
   if (headings.length < 2) {
     container.classList.add("hidden");
     return;
@@ -1298,6 +1326,8 @@ function enterEditMode(article) {
   document.getElementById("kb-edit-status").value =
     article.properties.status || "черновик";
   document.getElementById("kb-edit-icon").value = article.properties.icon || "";
+  document.getElementById("kb-edit-no-toc").checked =
+    isTableOfContentsDisabled(article.properties);
 
   toggleEditChrome(true);
   showLockBanner(null);
@@ -1341,6 +1371,14 @@ async function handleSaveClick() {
       status: document.getElementById("kb-edit-status").value,
       icon: document.getElementById("kb-edit-icon").value.trim(),
     };
+
+    // Выключатель хранится только когда включён: свойство «toc: true» в
+    // каждом файле ничего не объясняет, а файл читают и глазами.
+    if (document.getElementById("kb-edit-no-toc").checked) {
+      properties.toc = false;
+    } else {
+      delete properties.toc;
+    }
 
     const result = await requestKnowledgeBaseSave({
       root_path: knowledgeBase.rootPath,

@@ -40,6 +40,23 @@ test("заголовки трёх уровней отрисовываются", 
   assert.ok(html.includes("<h3"));
 });
 
+// Выпадающий список редактора предлагает шесть уровней. Понимай
+// отрисовщик только три — выбранный «Заголовок 4» уезжал бы в статью
+// абзацем с решётками, и человек увидел бы мусор вместо заголовка.
+test("заголовки с четвёртого по шестой уровень тоже отрисовываются", () => {
+  const html = renderMarkdown("#### Четвёртый\n##### Пятый\n###### Шестой");
+  assert.ok(html.includes("<h4"));
+  assert.ok(html.includes("<h5"));
+  assert.ok(html.includes("<h6"));
+  assert.ok(!html.includes("#### Четвёртый"));
+});
+
+test("седьмая решётка заголовком уже не считается", () => {
+  const html = renderMarkdown("####### Семь решёток");
+  assert.ok(!html.includes("<h7"));
+  assert.ok(html.includes("####### Семь решёток"));
+});
+
 test("жирный и курсив отрисовываются", () => {
   const html = renderMarkdown("Обычный **жирный** и *курсив*");
   assert.ok(html.includes("<strong>жирный</strong>"));
@@ -139,6 +156,15 @@ test("extractHeadings перечисляет заголовки по поряд�
   assert.equal(headings.length, 2);
   assert.equal(headings[0].text, "Первый");
   assert.equal(headings[1].level, 2);
+});
+
+// Оглавление отбирает уровни само, а extractHeadings обязан отдавать все:
+// якоря считаются по порядковому номеру заголовка, и пропуск глубоких
+// увёл бы ссылки оглавления не туда.
+test("extractHeadings отдаёт и глубокие заголовки", () => {
+  const headings = extractHeadings("# Первый\n#### Четвёртый");
+  assert.equal(headings.length, 2);
+  assert.equal(headings[1].level, 4);
 });
 
 test("extractHeadings не считает решётки внутри блока кода", () => {

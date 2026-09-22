@@ -91,3 +91,25 @@
 .toastui-editor-dark .kb-toolbar-article-link {
   color: #eee;
 }
+
+/* ── Классы, которые собирает JS ────────────────────────────────────────
+   Отрисовщик статьи строит имена классов на ходу: `kb-heading-${level}` для
+   заголовка и `kb-toc-level-${level}` для пункта оглавления. В исходниках
+   таких строк нет, поэтому Tailwind считает правила неиспользуемыми и
+   выбрасывает их из сборки — проверено: из tailwind.css они исчезали все,
+   включая давние правила для первых трёх уровней. Здесь они доживают до
+   пользователя. */
+
+.kb-heading-1 { font-size: 20px; }
+.kb-heading-2 { font-size: 17px; }
+.kb-heading-3 { font-size: 15px; }
+
+/* Глубокие уровни почти сливаются с текстом — так и задумано: они для
+   мелких пунктов внутри раздела, а не для новой главы. В оглавление они не
+   попадают. */
+.kb-heading-4 { font-size: 14px; }
+.kb-heading-5 { font-size: 13px; }
+.kb-heading-6 { font-size: 13px; color: var(--ink-secondary); }
+
+.kb-toc-level-2 { padding-left: 32px; }
+.kb-toc-level-3 { padding-left: 44px; }
