@@ -882,10 +882,10 @@
   }
 
   /* ── Три точки и меню действий раздела ────────────────────────────────
-     Кнопка проявляется при наведении на строку и при фокусе с клавиатуры:
-     видимые три точки у каждого раздела зарябили бы в узкой колонке, а
-     совсем скрытая кнопка перестала бы существовать для тех, кто ходит
-     табом. Место под неё занято всегда, поэтому название не дёргается. */
+     Кнопка видна всегда. Сначала она проявлялась при наведении — так меньше
+     ряби в узкой колонке, — но о спрятанной кнопке невозможно догадаться:
+     чтобы её найти, надо сначала знать, что она есть. Приглушённый цвет
+     оставлен, он темнеет под курсором. */
   .kb-kebab-button {
     flex-shrink: 0;
     width: 22px;
@@ -896,15 +896,13 @@
     color: var(--ink-muted);
     font-size: 14px;
     line-height: 1;
-    opacity: 0;
     cursor: pointer;
   }
-  .kb-folder-row:hover .kb-kebab-button,
-  .kb-kebab-button:focus-visible,
-  .kb-kebab-button[aria-expanded="true"] {
-    opacity: 1;
+  .kb-folder-row:hover .kb-kebab-button {
+    color: var(--ink-secondary);
   }
-  .kb-kebab-button:hover {
+  .kb-kebab-button:hover,
+  .kb-kebab-button[aria-expanded="true"] {
     background: var(--veil);
     color: var(--ink);
   }
