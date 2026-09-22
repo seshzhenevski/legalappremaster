@@ -32,7 +32,7 @@ import {
   requestKnowledgeBaseVersions,
 } from "./backend-api.js";
 import { askChoice, askConfirm, askText } from "./kb-dialog.js";
-import { closeMenu, isMenuOpenFor, openMenu } from "./kb-menu.js";
+import { closeMenu, isMenuOpenFor, openIconGrid, openMenu } from "./kb-menu.js";
 import { selectDirectory, selectDocumentFile } from "./file-dialogs.js";
 import { loadKnowledgeBaseRoot, saveKnowledgeBaseRoot } from "./kb-settings-store.js";
 import {
@@ -60,6 +60,18 @@ const CLOSE_UNLOCK_TIMEOUT_MS = 4000;
 // каждая всё равно стоит запуска процесса, поэтому чаще раза в минуту
 // спрашивать незачем: база знаний меняется несколько раз в день.
 const REMOTE_CHECK_INTERVAL_MS = 60_000;
+
+// Значки для статей. Набор небольшой и под юридическую работу намеренно:
+// полная панель эмодзи здесь только мешала бы выбирать, а разнобой значков
+// в дереве превращает его в пестроту, по которой ничего не находится.
+// Поле ввода рядом с кнопкой осталось — свой символ поставить по-прежнему
+// можно.
+const ARTICLE_ICONS = [
+  "📄", "📑", "📋", "⚖️", "🏛️", "📜", "✍️",
+  "🤝", "💼", "🏢", "💰", "🧾", "🔒", "🛡️",
+  "⚠️", "⛔", "✅", "❗", "📅", "⏱️", "📈",
+  "🔍", "📬", "📞", "🗂️", "🔖", "❓", "💡",
+];
 
 // До какого уровня заголовки попадают в оглавление. Четвёртый уровень и
 // глубже — это уже мелкие пункты внутри раздела; в оглавлении они превращают
@@ -196,6 +208,8 @@ function initEditor() {
     .addEventListener("click", () => hideOverlay("kb-versions-overlay"));
   document.getElementById("kb-article-menu-button")
     .addEventListener("click", handleArticleMenuClick);
+  document.getElementById("kb-edit-icon-picker")
+    .addEventListener("click", handleIconPickerClick);
   document.getElementById("kb-trash-button")
     .addEventListener("click", handleTrashClick);
   document.getElementById("kb-trash-close")
@@ -849,6 +863,24 @@ function handleTreeClick(event) {
     showArticle(articleButton.dataset.kbArticle);
     renderTreePane();
   }
+}
+
+/**
+ * Открывает сетку значков у поля значка.
+ *
+ * Выбранный значок кладётся в то же поле, куда его можно вписать руками:
+ * сохранение читает поле и не знает, откуда там взялся символ.
+ */
+function handleIconPickerClick() {
+  const button = document.getElementById("kb-edit-icon-picker");
+  if (isMenuOpenFor(button)) {
+    closeMenu();
+    return;
+  }
+
+  openIconGrid(button, ARTICLE_ICONS, (icon) => {
+    document.getElementById("kb-edit-icon").value = icon;
+  });
 }
 
 /**

@@ -941,6 +941,36 @@
     background: var(--veil);
     outline: none;
   }
+  /* Сетка значков. Ширина столбца и их число согласованы с
+     ICON_GRID_COLUMNS в kb-menu.js: по нему стрелки ходят строкой. */
+  .kb-icon-panel {
+    min-width: 0;
+  }
+  .kb-icon-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 32px);
+    gap: 2px;
+    margin-top: 2px;
+    padding-top: 4px;
+    border-top: 1px solid var(--hairline);
+  }
+  .kb-icon-grid-item {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    font-size: 17px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .kb-icon-grid-item:hover,
+  .kb-icon-grid-item:focus-visible {
+    background: var(--veil);
+    outline: none;
+  }
+
   .kb-menu-item-danger {
     color: rgb(var(--c-red-600));
   }

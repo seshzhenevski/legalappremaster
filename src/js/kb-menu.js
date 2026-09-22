@@ -1,5 +1,5 @@
 // kb-menu.js
-// Всплывающее меню действий для вкладки базы знаний.
+// Всплывающие окна вкладки базы знаний: меню действий и сетка значков.
 //
 // Меню живёт в конце body и позиционируется по кнопке, от которой его
 // открыли. Рисовать его прямо в дереве нельзя: колонка дерева прокручивается
@@ -15,6 +15,10 @@ const MENU_GAP = 4;
 // Сколько оставить до края окна, если меню не помещается вниз или вправо.
 const VIEWPORT_MARGIN = 8;
 
+// Столбцов в сетке значков. Должно совпадать с шириной колонки в CSS:
+// по этому числу стрелки вверх-вниз шагают строкой, а не пунктом.
+const ICON_GRID_COLUMNS = 7;
+
 let activeMenu = null;
 
 /**
@@ -29,16 +33,16 @@ let activeMenu = null;
  * оказалось бы привязанным к пустому месту.
  */
 export function openMenu(anchorElement, items) {
-  closeMenu();
-
   const menu = document.createElement("div");
   menu.className = "kb-menu";
   menu.setAttribute("role", "menu");
+  menu.dataset.columns = "1";
 
   items.forEach((item) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = item.danger ? "kb-menu-item kb-menu-item-danger" : "kb-menu-item";
+    button.dataset.kbPopoverItem = "";
     button.setAttribute("role", "menuitem");
     button.textContent = item.label;
     button.addEventListener("click", () => {
@@ -48,14 +52,73 @@ export function openMenu(anchorElement, items) {
     menu.appendChild(button);
   });
 
-  document.body.appendChild(menu);
-  placeMenu(menu, anchorElement);
+  showPopover(anchorElement, menu);
+}
+
+/**
+ * Открывает сетку значков рядом с кнопкой.
+ *
+ * Принимает кнопку-якорь, список значков и то, что делать с выбранным.
+ * Первым пунктом идёт отказ от значка: статья без него получает лист по
+ * умолчанию, и вернуться к этому должно быть так же легко, как выбрать.
+ *
+ * Значки показываются сеткой, а не списком: их несколько десятков, и
+ * столбиком это была бы длинная лента, в которой глазу не за что зацепиться.
+ */
+export function openIconGrid(anchorElement, icons, onPick) {
+  const panel = document.createElement("div");
+  panel.className = "kb-menu kb-icon-panel";
+  panel.dataset.columns = String(ICON_GRID_COLUMNS);
+
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.className = "kb-menu-item";
+  clear.dataset.kbPopoverItem = "";
+  clear.textContent = "Без значка";
+  clear.addEventListener("click", () => {
+    closeMenu();
+    onPick("");
+  });
+  panel.appendChild(clear);
+
+  const grid = document.createElement("div");
+  grid.className = "kb-icon-grid";
+  icons.forEach((icon) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "kb-icon-grid-item";
+    button.dataset.kbPopoverItem = "";
+    button.title = icon;
+    button.setAttribute("aria-label", `Значок ${icon}`);
+    button.textContent = icon;
+    button.addEventListener("click", () => {
+      closeMenu();
+      onPick(icon);
+    });
+    grid.appendChild(button);
+  });
+  panel.appendChild(grid);
+
+  showPopover(anchorElement, panel);
+}
+
+/**
+ * Показывает готовое окно рядом с кнопкой и берёт на себя его закрытие.
+ *
+ * Принимает кнопку-якорь и собранное содержимое. Общая часть меню и сетки:
+ * размещение, подписки на закрытие и фокус.
+ */
+function showPopover(anchorElement, panel) {
+  closeMenu();
+
+  document.body.appendChild(panel);
+  placeMenu(panel, anchorElement);
 
   anchorElement.setAttribute("aria-expanded", "true");
-  activeMenu = { element: menu, anchor: anchorElement };
+  activeMenu = { element: panel, anchor: anchorElement };
 
-  // Подписки вешаются на следующем кадре: клик, открывший меню, ещё
-  // всплывает, и меню закрылось бы тем же нажатием, которым открылось.
+  // Подписки вешаются на следующем кадре: клик, открывший окно, ещё
+  // всплывает, и окно закрылось бы тем же нажатием, которым открылось.
   setTimeout(() => {
     document.addEventListener("mousedown", handleOutsideClick, true);
     document.addEventListener("keydown", handleKeyDown, true);
@@ -65,7 +128,7 @@ export function openMenu(anchorElement, items) {
     window.addEventListener("scroll", closeMenu, true);
   }, 0);
 
-  const firstItem = menu.querySelector(".kb-menu-item");
+  const firstItem = panel.querySelector("[data-kb-popover-item]");
   if (firstItem) {
     firstItem.focus();
   }
@@ -176,17 +239,22 @@ function handleKeyDown(event) {
     closeMenu();
     return;
   }
-  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
+  const steps = {
+    ArrowDown: Number(activeMenu.element.dataset.columns || 1),
+    ArrowUp: -Number(activeMenu.element.dataset.columns || 1),
+    ArrowRight: 1,
+    ArrowLeft: -1,
+  };
+  if (!(event.key in steps)) {
     return;
   }
 
   event.preventDefault();
-  const buttons = [...activeMenu.element.querySelectorAll(".kb-menu-item")];
+  const buttons = [...activeMenu.element.querySelectorAll("[data-kb-popover-item]")];
   if (!buttons.length) {
     return;
   }
   const current = buttons.indexOf(document.activeElement);
-  const step = event.key === "ArrowDown" ? 1 : -1;
-  const next = (current + step + buttons.length) % buttons.length;
+  const next = (current + steps[event.key] + buttons.length) % buttons.length;
   buttons[next].focus();
 }
