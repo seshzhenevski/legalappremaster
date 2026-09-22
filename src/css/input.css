@@ -862,6 +862,117 @@
     background: var(--veil);
     color: var(--ink);
   }
+  /* Строка корня базы: у неё нет стрелки и подсветки — сворачивать и
+     выбирать там нечего, она нужна ради своего меню и ради того, чтобы было
+     видно, какая папка открыта. */
+  .kb-root-row {
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .kb-root-name {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 8px;
+    overflow: hidden;
+    color: var(--ink-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ── Три точки и меню действий раздела ────────────────────────────────
+     Кнопка проявляется при наведении на строку и при фокусе с клавиатуры:
+     видимые три точки у каждого раздела зарябили бы в узкой колонке, а
+     совсем скрытая кнопка перестала бы существовать для тех, кто ходит
+     табом. Место под неё занято всегда, поэтому название не дёргается. */
+  .kb-kebab-button {
+    flex-shrink: 0;
+    width: 22px;
+    height: 26px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ink-muted);
+    font-size: 14px;
+    line-height: 1;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .kb-folder-row:hover .kb-kebab-button,
+  .kb-kebab-button:focus-visible,
+  .kb-kebab-button[aria-expanded="true"] {
+    opacity: 1;
+  }
+  .kb-kebab-button:hover {
+    background: var(--veil);
+    color: var(--ink);
+  }
+
+  .kb-menu {
+    position: fixed;
+    z-index: 50;
+    min-width: 184px;
+    padding: 4px;
+    border: 1px solid rgb(var(--c-slate-200));
+    border-radius: 10px;
+    background: rgb(var(--c-white));
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.14);
+  }
+  .kb-menu-item {
+    display: block;
+    width: 100%;
+    padding: 7px 10px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--ink);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .kb-menu-item:hover,
+  .kb-menu-item:focus-visible {
+    background: var(--veil);
+    outline: none;
+  }
+  .kb-menu-item-danger {
+    color: rgb(var(--c-red-600));
+  }
+  .kb-menu-item-danger:hover,
+  .kb-menu-item-danger:focus-visible {
+    background: rgb(var(--c-red-50));
+  }
+
+  /* ── Путь открытой статьи ──────────────────────────────────────────────
+     Показывает, откуда статья, — в глубоком дереве по одному заголовку это
+     не читается. Сегменты кликабельны: путь заодно работает навигацией. */
+  .kb-article-path {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+    color: var(--ink-muted);
+    font-size: 12px;
+  }
+  .kb-article-path-step {
+    padding: 2px 4px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .kb-article-path-step:hover {
+    background: var(--veil);
+    color: var(--ink);
+  }
+  .kb-article-path-separator {
+    color: var(--ink-muted);
+  }
+
   .kb-folder-toggle.kb-folder-active {
     background: var(--accent-wash);
     color: var(--accent);

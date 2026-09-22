@@ -1430,11 +1430,6 @@
                 aria-label="Обновить" title="Обновить: перечитать базу с сетевого диска">
                 <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /> <path d="M21 3v5h-5" /> <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /> <path d="M8 16H3v5" /></svg>
               </button>
-              <button id="kb-new-article-button" type="button"
-                class="flex items-center justify-center w-9 h-9 bg-slate-100 hover:bg-slate-200 rounded-lg"
-                aria-label="Создать статью" title="Создать статью в выбранном разделе">
-                <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" /> <path d="M14 2v5a1 1 0 0 0 1 1h5" /> <path d="M9 15h6" /> <path d="M12 18v-6" /></svg>
-              </button>
               <button id="kb-trash-button" type="button"
                 class="flex items-center justify-center w-9 h-9 bg-slate-100 hover:bg-slate-200 rounded-lg"
                 aria-label="Корзина" title="Корзина: удалённые статьи">
@@ -1445,19 +1440,6 @@
                 aria-label="Сменить папку" title="Сменить папку базы знаний">
                 <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" /></svg>
               </button>
-            </div>
-          </div>
-          <div id="kb-folder-actions" class="hidden px-3 py-2 border-b border-slate-100">
-            <p class="text-xs text-slate-500 mb-1.5">
-              Раздел: <span id="kb-selected-folder" class="text-slate-700"></span>
-            </p>
-            <div class="flex flex-wrap gap-1.5">
-              <button id="kb-new-folder-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-md px-2 py-1 text-xs"
-                title="Создать подраздел внутри выбранного">+ Раздел</button>
-              <button id="kb-rename-folder-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-md px-2 py-1 text-xs"
-                title="Переименовать выбранный раздел">Переименовать</button>
-              <button id="kb-delete-folder-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-md px-2 py-1 text-xs"
-                title="Удалить выбранный раздел (только пустой)">Удалить</button>
             </div>
           </div>
           <div id="kb-tree" class="flex-1 min-h-0 overflow-y-auto thin-scroll p-2"></div>
@@ -1471,6 +1453,10 @@
 
           <article id="kb-article" class="hidden flex-1 min-h-0 flex flex-col">
             <header class="p-5 border-b border-slate-100 space-y-3">
+              <!-- Откуда статья. По одному заголовку этого не понять, а
+                   сегменты заодно работают навигацией по дереву. -->
+              <nav id="kb-article-path" class="kb-article-path" aria-label="Путь статьи"></nav>
+
               <div class="flex items-start gap-3">
                 <span id="kb-article-icon" class="text-2xl leading-none" aria-hidden="true"></span>
                 <h2 id="kb-article-title" class="text-xl font-medium text-slate-700 flex-1"></h2>
