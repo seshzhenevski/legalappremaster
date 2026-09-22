@@ -5,50 +5,21 @@
 Это граница между интерфейсом и логикой. Диспетчер знает о логике
 (импортирует её функции), но логика не знает о диспетчере. Каждый метод —
 это тонкая обёртка, которая извлекает параметры и вызывает одну функцию логики.
+
+Импорты логики стоят ВНУТРИ обработчиков, а не наверху модуля, и это не
+небрежность. Sidecar запускается заново на каждый вызов, то есть модульные
+импорты платятся каждый раз целиком: pandas, numpy, reportlab, openpyxl и
+google-auth — около секунды на запуск даже тогда, когда метод спрашивает
+«не менялось ли что-нибудь в папке базы знаний». Ленивый импорт оставляет
+от этой секунды десятые доли.
+
+Плата за это — опечатка в имени функции логики падает не при импорте, а при
+вызове метода. Ловится тестом test_every_knowledge_base_method_is_wired,
+который дёргает все методы базы знаний, и прогоном набора целиком.
 """
 from __future__ import annotations
 
 from pathlib import Path
-
-from logic.state_duty_calculator import calculate_duty_for_claim_amount
-from logic.penalty_calculator import calculate_penalty_for_debts
-from logic.company_lookup import find_company_by_inn
-from logic.lawsuit_generator import generate_lawsuit_package
-from logic.document_sorter_service import sort_documents_into_packages
-from logic.payment_order_generator import generate_state_duty_payment_order
-from logic.penalty_excel_import import import_debts_and_payments_from_excel
-from logic.claim_generator import (
-    generate_claim_package,
-    summarize_invoices_excel,
-    export_claim_document,
-    find_claim_by_inn,
-)
-from logic.court_cases_dashboard import load_dashboard_data
-from logic.knowledge_base import (
-    acquire_lock,
-    attach_document,
-    check_document,
-    check_lock,
-    create_article,
-    create_folder,
-    delete_article,
-    delete_folder,
-    list_trash,
-    list_versions,
-    load_knowledge_base,
-    move_article,
-    purge_trash_entry,
-    read_article,
-    read_version,
-    release_lock,
-    rename_folder,
-    resolve_inside_root,
-    restore_article,
-    restore_version,
-    save_article,
-    save_article_and_sync_filename,
-    scan_changes,
-)
 
 
 def handle_calculate_state_duty(params: dict, report_progress) -> dict:
@@ -57,6 +28,8 @@ def handle_calculate_state_duty(params: dict, report_progress) -> dict:
 
     Извлекает цену иска из параметров и возвращает результат расчёта.
     """
+    from logic.state_duty_calculator import calculate_duty_for_claim_amount
+
     return calculate_duty_for_claim_amount(params["claim_amount"])
 
 
@@ -68,6 +41,8 @@ def handle_calculate_penalty(params: dict, report_progress) -> dict:
     (день/год) и необязательное ограничение из параметров и возвращает
     результат расчёта.
     """
+    from logic.penalty_calculator import calculate_penalty_for_debts
+
     return calculate_penalty_for_debts(
         debts_input=params["debts"],
         payments_input=params.get("payments", []),
@@ -85,6 +60,8 @@ def handle_find_company_by_inn(params: dict, report_progress) -> dict | None:
 
     Извлекает ИНН и API-ключ из параметров и возвращает реквизиты компании.
     """
+    from logic.company_lookup import find_company_by_inn
+
     return find_company_by_inn(params["inn"], params["api_key"])
 
 
@@ -96,6 +73,8 @@ def handle_generate_lawsuit(params: dict, report_progress) -> dict:
     Возвращает пути к созданным файлам вместе с итоговыми суммами. Ход
     работы транслируется в реальном времени через report_progress.
     """
+    from logic.lawsuit_generator import generate_lawsuit_package
+
     return generate_lawsuit_package(params, report_progress)
 
 
@@ -108,6 +87,8 @@ def handle_sort_documents(params: dict, report_progress) -> dict:
     созданных пакетов; сам ход работы транслируется в реальном времени
     через report_progress.
     """
+    from logic.document_sorter_service import sort_documents_into_packages
+
     return sort_documents_into_packages(params, report_progress)
 
 
@@ -118,6 +99,8 @@ def handle_generate_payment_order_pdf(params: dict, report_progress) -> dict:
     Извлекает путь сохранения, сумму пошлины, ответчика, сумму иска и дату
     платежа из параметров и возвращает путь к созданному PDF-файлу.
     """
+    from logic.payment_order_generator import generate_state_duty_payment_order
+
     return generate_state_duty_payment_order(
         output_path=params["output_path"],
         duty_amount=params["duty_amount"],
@@ -134,6 +117,8 @@ def handle_import_penalty_excel(params: dict, report_progress) -> dict:
     Извлекает путь к файлу из параметров и возвращает списки задолженностей
     и платежей, готовые для подстановки в форму расчёта неустойки.
     """
+    from logic.penalty_excel_import import import_debts_and_payments_from_excel
+
     return import_debts_and_payments_from_excel(params["excel_path"])
 
 
@@ -145,6 +130,8 @@ def handle_generate_claim(params: dict, report_progress) -> dict:
     Возвращает пути к временным файлам (DOCX, PDF, опись) и сводку; ход работы
     транслируется в реальном времени через report_progress.
     """
+    from logic.claim_generator import generate_claim_package
+
     return generate_claim_package(params, report_progress)
 
 
@@ -155,6 +142,8 @@ def handle_summarize_claim_excel(params: dict, report_progress) -> dict:
     Извлекает путь к файлу и возвращает общую сумму и реквизиты договора
     для автоподстановки в поля формы претензии.
     """
+    from logic.claim_generator import summarize_invoices_excel
+
     return summarize_invoices_excel(params["excel_path"])
 
 
@@ -166,6 +155,8 @@ def handle_find_claim_by_inn(params: dict, report_progress) -> dict | None:
     сетевая папка из конфига) и возвращает номер и дату последней претензии
     этого должника для автоподстановки в форму иска.
     """
+    from logic.claim_generator import find_claim_by_inn
+
     return find_claim_by_inn(params["inn"], params.get("registry_folder"))
 
 
@@ -176,6 +167,8 @@ def handle_export_claim_document(params: dict, report_progress) -> dict:
     Копирует временный файл претензии (DOCX или PDF) по указанному пути и
     кладёт рядом опись. Возвращает список сохранённых файлов.
     """
+    from logic.claim_generator import export_claim_document
+
     return export_claim_document(params)
 
 
@@ -187,6 +180,8 @@ def handle_load_dashboard_data(params: dict, report_progress) -> dict:
     возвращает посчитанные показатели сразу по всем годам и по каждому году.
     Таблица только читается — записи в неё дашборд не делает.
     """
+    from logic.court_cases_dashboard import load_dashboard_data
+
     return load_dashboard_data(params)
 
 
@@ -198,6 +193,8 @@ def handle_load_knowledge_base(params: dict, report_progress) -> dict:
     разделов вместе с текстом всех статей. Интерфейс держит это в памяти и
     дальше открывает статьи и ищет по ним, не обращаясь к бэкенду.
     """
+    from logic.knowledge_base import load_knowledge_base
+
     return load_knowledge_base(Path(params["root_path"]))
 
 
@@ -210,6 +207,8 @@ def handle_scan_kb_changes(params: dict, report_progress) -> dict:
     это раз в минуту, и полная загрузка ради ответа «ничего не менялось»
     гоняла бы по сети всю базу.
     """
+    from logic.knowledge_base import scan_changes
+
     return scan_changes(Path(params["root_path"]))
 
 
@@ -221,6 +220,8 @@ def handle_read_kb_article(params: dict, report_progress) -> dict:
     перечитывая базу целиком. Возвращает свойства, текст и отпечаток
     содержимого.
     """
+    from logic.knowledge_base import read_article, resolve_inside_root
+
     root_path = Path(params["root_path"])
     return read_article(resolve_inside_root(root_path, params["relative_path"]))
 
@@ -229,18 +230,25 @@ def handle_save_kb_article(params: dict, report_progress) -> dict:
     """
     Обрабатывает сохранение статьи базы знаний.
 
-    Извлекает корень базы, относительный путь, свойства, текст и отпечаток
-    содержимого, полученный при открытии статьи. Возвращает признак conflict,
-    если статью тем временем правил кто-то другой, — перезаписи в этом случае
-    не происходит. Имя файла приводится в соответствие заголовку, поэтому в
-    ответе возвращается актуальный относительный путь.
+    Извлекает корень базы, относительный путь, свойства, текст, отпечаток
+    содержимого, полученный при открытии статьи, и её идентификатор.
+    Возвращает признак conflict, если статью тем временем правил кто-то
+    другой, — перезаписи в этом случае не происходит. Имя файла приводится в
+    соответствие заголовку, поэтому в ответе возвращается актуальный
+    относительный путь.
+
+    Заодно снимает замок и отдаёт доступность документов и примету папки:
+    сохранение должно стоить одного запуска процесса, а не трёх.
     """
-    return save_article_and_sync_filename(
+    from logic.knowledge_base import save_article_and_finish_editing
+
+    return save_article_and_finish_editing(
         Path(params["root_path"]),
         params["relative_path"],
         params["properties"],
         params["body"],
         params.get("expected_fingerprint"),
+        params.get("article_id", ""),
     )
 
 
@@ -251,6 +259,8 @@ def handle_create_kb_article(params: dict, report_progress) -> dict:
     Извлекает корень базы, раздел, заголовок и автора. Возвращает карточку
     созданной статьи с её постоянным идентификатором.
     """
+    from logic.knowledge_base import create_article
+
     return create_article(
         Path(params["root_path"]),
         params.get("folder_relative_path", ""),
@@ -270,6 +280,8 @@ def handle_acquire_kb_lock(params: dict, report_progress) -> dict:
     брошенного замка. Возвращает признак успеха и сведения о том, кто
     держит статью, если захватить не удалось.
     """
+    from logic.knowledge_base import acquire_lock
+
     return acquire_lock(
         Path(params["root_path"]),
         params["article_id"],
@@ -283,6 +295,8 @@ def handle_release_kb_lock(params: dict, report_progress) -> dict:
 
     Извлекает корень базы и идентификатор статьи. Чужой замок не снимается.
     """
+    from logic.knowledge_base import release_lock
+
     return release_lock(Path(params["root_path"]), params["article_id"])
 
 
@@ -292,6 +306,8 @@ def handle_check_kb_lock(params: dict, report_progress) -> dict | None:
 
     Возвращает сведения о владельце замка или None, если статья свободна.
     """
+    from logic.knowledge_base import check_lock
+
     return check_lock(Path(params["root_path"]), params["article_id"])
 
 
@@ -301,6 +317,8 @@ def handle_list_kb_versions(params: dict, report_progress) -> list:
 
     Возвращает записи с именем снимка и временем сохранения, новые первыми.
     """
+    from logic.knowledge_base import list_versions
+
     return list_versions(Path(params["root_path"]), params["article_id"])
 
 
@@ -311,6 +329,8 @@ def handle_read_kb_version(params: dict, report_progress) -> dict:
     Нужен, чтобы показать прежнюю версию до того, как пользователь решит
     её восстанавливать.
     """
+    from logic.knowledge_base import read_version
+
     return read_version(
         Path(params["root_path"]), params["article_id"], params["version_name"],
     )
@@ -323,6 +343,8 @@ def handle_restore_kb_version(params: dict, report_progress) -> dict:
     Восстановление идёт обычным сохранением, поэтому текущая версия сама
     попадает в снимки и откат можно отменить тем же способом.
     """
+    from logic.knowledge_base import restore_version
+
     return restore_version(
         Path(params["root_path"]),
         params["relative_path"],
@@ -339,6 +361,8 @@ def handle_delete_kb_article(params: dict, report_progress) -> dict:
     исходном пути: на общем диске случайное удаление обходится дорого.
     Возвращает запись корзины, по которой статью можно вернуть.
     """
+    from logic.knowledge_base import delete_article, resolve_inside_root
+
     root_path = Path(params["root_path"])
     article_path = resolve_inside_root(root_path, params["relative_path"])
     return delete_article(root_path, article_path)
@@ -348,6 +372,8 @@ def handle_list_kb_trash(params: dict, report_progress) -> list:
     """
     Обрабатывает запрос содержимого корзины, недавно удалённые первыми.
     """
+    from logic.knowledge_base import list_trash
+
     return list_trash(Path(params["root_path"]))
 
 
@@ -358,6 +384,8 @@ def handle_restore_kb_trash_entry(params: dict, report_progress) -> dict:
     Если на исходном пути уже лежит другая статья, она НЕ перезаписывается —
     восстановленная кладётся рядом под именем с пометкой.
     """
+    from logic.knowledge_base import restore_article
+
     return restore_article(Path(params["root_path"]), params["entry_id"])
 
 
@@ -367,6 +395,8 @@ def handle_purge_kb_trash_entry(params: dict, report_progress) -> None:
 
     После этого восстановить статью средствами приложения нельзя.
     """
+    from logic.knowledge_base import purge_trash_entry
+
     purge_trash_entry(Path(params["root_path"]), params["entry_id"])
 
 
@@ -377,6 +407,8 @@ def handle_move_kb_article(params: dict, report_progress) -> dict:
     Содержимое файла не меняется: идентификатор остаётся прежним, поэтому
     ссылки на статью продолжают работать.
     """
+    from logic.knowledge_base import move_article
+
     return move_article(
         Path(params["root_path"]),
         params["relative_path"],
@@ -388,6 +420,8 @@ def handle_create_kb_folder(params: dict, report_progress) -> dict:
     """
     Обрабатывает создание раздела базы знаний.
     """
+    from logic.knowledge_base import create_folder
+
     return create_folder(
         Path(params["root_path"]),
         params.get("parent_relative_path", ""),
@@ -402,6 +436,8 @@ def handle_rename_kb_folder(params: dict, report_progress) -> dict:
     Статьи внутри не трогаются: их идентификаторы и ссылки на них не зависят
     от того, как называется папка.
     """
+    from logic.knowledge_base import rename_folder
+
     return rename_folder(
         Path(params["root_path"]),
         params["folder_relative_path"],
@@ -416,6 +452,8 @@ def handle_delete_kb_folder(params: dict, report_progress) -> dict:
     Раздел со статьями не удаляется — возвращается их количество, чтобы
     интерфейс объяснил, почему ничего не произошло.
     """
+    from logic.knowledge_base import delete_folder
+
     return delete_folder(
         Path(params["root_path"]), params["folder_relative_path"],
     )
@@ -429,6 +467,8 @@ def handle_attach_kb_document(params: dict, report_progress) -> dict:
     ссылки. Документ живёт вместе со статьёй и доступен всем пользователям
     базы, а не только тому, у кого файл лежал на своём диске.
     """
+    from logic.knowledge_base import attach_document
+
     return attach_document(
         Path(params["root_path"]),
         params["article_id"],
@@ -443,6 +483,8 @@ def handle_check_kb_document(params: dict, report_progress) -> dict:
     Нужна перед открытием: файл могли удалить или отключить сетевой диск уже
     после того, как база была прочитана.
     """
+    from logic.knowledge_base import check_document
+
     return check_document(Path(params["root_path"]), params["target"])
 
 

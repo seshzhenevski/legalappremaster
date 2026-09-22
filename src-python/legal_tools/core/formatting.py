@@ -16,10 +16,28 @@ from decimal import Decimal, ROUND_HALF_UP
 from functools import lru_cache
 from typing import Optional, Tuple
 
-try:
-    from openpyxl.utils.datetime import from_excel as _xl_from_excel
-except Exception:
-    _xl_from_excel = None
+
+def _excel_serial_to_datetime(raw):
+    """
+    Превращает «сериальное» число Excel в дату, подтянув openpyxl на месте.
+
+    Импорт намеренно внутри функции. openpyxl тяжёлый: на этой машине он
+    грузится 0,46 с, и, стоя наверху модуля, он платился при каждом запуске
+    sidecar — а запуск sidecar это и есть каждый вызов бэкенда, включая те,
+    где никакого Excel нет: открыть базу знаний, посчитать пошлину, спросить
+    про чужие правки. Числовые даты приходят только из книг Excel, поэтому
+    здесь он подтягивается ровно там, где нужен.
+
+    Возвращает None, если openpyxl недоступен или число датой не является.
+    """
+    try:
+        from openpyxl.utils.datetime import from_excel
+    except Exception:
+        return None
+    try:
+        return from_excel(raw)
+    except Exception:
+        return None
 
 
 # ── Форматирование сумм ───────────────────────────────────────────────────────
@@ -108,12 +126,8 @@ def parse_date_cell(raw) -> Optional[date]:
     if isinstance(raw, date):
         return raw
     if isinstance(raw, (int, float)):
-        if _xl_from_excel is not None:
-            try:
-                return _xl_from_excel(raw).date()
-            except Exception:
-                return None
-        return None
+        converted = _excel_serial_to_datetime(raw)
+        return converted.date() if converted is not None else None
     return parse_any_date(str(raw))
 
 

@@ -166,7 +166,7 @@ export function initKnowledgeBaseTab() {
   document.getElementById("kb-tree").addEventListener("click", handleTreeClick);
   document.getElementById("kb-article-body")
     .addEventListener("click", handleArticleClick);
-  document.getElementById("kb-article-path")
+  document.getElementById("kb-breadcrumbs")
     .addEventListener("click", handleArticlePathClick);
 
   const navigationButton = document.querySelector(
@@ -913,7 +913,7 @@ function buildFolderMenuItems(folderPath) {
  * по пути. Сам заголовок в путь не входит — он и так крупно написан ниже.
  */
 function renderArticlePath(article) {
-  const container = document.getElementById("kb-article-path");
+  const container = document.getElementById("kb-breadcrumbs");
   container.innerHTML = "";
 
   const folders = article.relative_path.split("/").slice(0, -1);
@@ -925,14 +925,14 @@ function renderArticlePath(article) {
   steps.forEach((step, index) => {
     if (index) {
       const separator = document.createElement("span");
-      separator.className = "kb-article-path-separator";
+      separator.className = "kb-breadcrumbs-separator";
       separator.textContent = "/";
       container.appendChild(separator);
     }
 
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "kb-article-path-step";
+    button.className = "kb-breadcrumbs-step";
     button.dataset.kbPathStep = step.path;
     button.textContent = step.label;
     container.appendChild(button);
@@ -1387,12 +1387,14 @@ async function handleSaveClick() {
       delete properties.toc;
     }
 
+    const savedBody = getEditorContent();
     const result = await requestKnowledgeBaseSave({
       root_path: knowledgeBase.rootPath,
       relative_path: editState.relativePath,
       properties: properties,
-      body: getEditorContent(),
+      body: savedBody,
       expected_fingerprint: editState.fingerprint,
+      article_id: editState.articleId,
     });
 
     if (result.conflict) {
@@ -1400,11 +1402,14 @@ async function handleSaveClick() {
       return;
     }
 
-    await requestKnowledgeBaseUnlock(knowledgeBase.rootPath, editState.articleId);
+    const savedPath = editState.relativePath;
     editState.isEditing = false;
     disposeVisualEditor();
     toggleEditChrome(false);
-    await reloadKnowledgeBase(false);
+
+    // Замок снят тем же вызовом, что и запись. Дальше вкладка правит свою
+    // память сама — это один запуск процесса вместо трёх.
+    await applySavedArticle(savedPath, savedBody, result);
     showToast("Статья сохранена");
   } catch (error) {
     showToast(`Не удалось сохранить: ${describeError(error)}`);
@@ -1482,6 +1487,77 @@ async function createArticleIn(folderPath) {
     showToast(`Не удалось создать статью: ${describeError(error)}`);
   } finally {
     setBusy(false);
+  }
+}
+
+/**
+ * Заносит сохранённую статью в память вкладки, не перечитывая базу.
+ *
+ * Принимает прежний путь статьи, сохранённый текст и ответ бэкенда. Раньше
+ * здесь стояло полное перечитывание базы — ещё один запуск процесса на пару
+ * секунд ради данных, которые сохранение и так вернуло.
+ *
+ * Переименование заголовка тянет за собой имя файла, а значит и место статьи
+ * в отсортированном дереве. Такой случай отдаётся полному перечитыванию: он
+ * редкий, а собирать дерево заново на фронтенде — заводить вторую реализацию
+ * сортировки, которая однажды разойдётся с той, что в Python.
+ */
+async function applySavedArticle(previousPath, savedBody, result) {
+  const article = knowledgeBase.articlesById.get(
+    (result.properties.id || "").toLowerCase(),
+  );
+  if (!article || result.relative_path !== previousPath) {
+    await reloadKnowledgeBase(false);
+    return;
+  }
+
+  article.properties = result.properties;
+  article.body = savedBody;
+  article.fingerprint = result.fingerprint;
+  article.title = result.properties.title || article.title;
+  article.status = result.properties.status || article.status;
+  article.icon = result.properties.icon || "";
+  article.category = result.properties.category || "";
+  updateTreeArticle(article);
+
+  // Доступность документов приходит по ссылкам сохранённого текста: в статью
+  // могли добавить ссылку на файл, которой в прошлой загрузке не было.
+  (result.documents || []).forEach((item) => {
+    knowledgeBase.documents.set(item.target, item);
+  });
+  // Примета состояния папки — та, что бэкенд снял сразу после записи. Без
+  // неё фоновая проверка сочла бы собственное сохранение чужой правкой.
+  if (result.signature) {
+    knowledgeBase.signature = result.signature;
+  }
+
+  rebuildLinkIndex();
+  renderTreeKeepingScroll();
+  showArticle(article.relative_path);
+}
+
+/**
+ * Переносит изменившиеся поля статьи в её карточку внутри дерева.
+ *
+ * Принимает статью из плоского списка. Дерево и список приходят от бэкенда
+ * разными объектами, поэтому правка одного не видна другому: в дереве статья
+ * осталась бы с прежним значком и статусом до следующего перечитывания.
+ */
+function updateTreeArticle(article) {
+  const visit = (folderNode) => {
+    const entry = folderNode.articles.find((item) => item.id === article.id);
+    if (entry) {
+      entry.title = article.title;
+      entry.status = article.status;
+      entry.icon = article.icon;
+      entry.category = article.category;
+      return true;
+    }
+    return folderNode.folders.some(visit);
+  };
+
+  if (knowledgeBase.tree) {
+    visit(knowledgeBase.tree);
   }
 }
 

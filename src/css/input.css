@@ -951,8 +951,12 @@
 
   /* ── Путь открытой статьи ──────────────────────────────────────────────
      Показывает, откуда статья, — в глубоком дереве по одному заголовку это
-     не читается. Сегменты кликабельны: путь заодно работает навигацией. */
-  .kb-article-path {
+     не читается. Сегменты кликабельны: путь заодно работает навигацией.
+
+     Имя не kb-article-path: так называется строка пути под результатом
+     поиска и в корзине, и правило отсюда перебивало бы её обрезку
+     многоточием. */
+  .kb-breadcrumbs {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -960,7 +964,7 @@
     color: var(--ink-muted);
     font-size: 12px;
   }
-  .kb-article-path-step {
+  .kb-breadcrumbs-step {
     padding: 2px 4px;
     border: none;
     border-radius: 5px;
@@ -969,11 +973,11 @@
     font-size: 12px;
     cursor: pointer;
   }
-  .kb-article-path-step:hover {
+  .kb-breadcrumbs-step:hover {
     background: var(--veil);
     color: var(--ink);
   }
-  .kb-article-path-separator {
+  .kb-breadcrumbs-separator {
     color: var(--ink-muted);
   }
 

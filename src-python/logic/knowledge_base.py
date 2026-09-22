@@ -696,6 +696,47 @@ def save_article_and_sync_filename(
     return result
 
 
+def save_article_and_finish_editing(
+    root_path: Path,
+    article_relative_path: str,
+    properties: Dict[str, Any],
+    body: str,
+    expected_fingerprint: str | None = None,
+    article_id: str = "",
+) -> Dict[str, Any]:
+    """
+    Сохраняет статью, снимает замок и отдаёт всё, что нужно вкладке дальше.
+
+    Принимает то же, что save_article_and_sync_filename, плюс идентификатор
+    статьи для снятия замка. Возвращает результат сохранения, доступность
+    документов, на которые ссылается сохранённый текст, и примету состояния
+    папки.
+
+    Всё это собрано в один вызов не для красоты. Каждое обращение к бэкенду —
+    запуск отдельного процесса на пару секунд, а сохранение раньше стоило
+    трёх: записать, снять замок, перечитать базу целиком. Вкладка теперь
+    правит свою память сама, и сохранение стоит одного запуска.
+
+    При конфликте замок НЕ снимается: чужая версия на диске, своя в
+    редакторе, и человек ещё выбирает, что с ними делать, — отпускать статью
+    в этот момент нельзя.
+    """
+    result = save_article_and_sync_filename(
+        root_path, article_relative_path, properties, body, expected_fingerprint,
+    )
+    if result["conflict"]:
+        return result
+
+    if article_id:
+        release_lock(root_path, article_id)
+
+    result["documents"] = collect_document_availability(root_path, [{"body": body}])
+    # Примета снимается после записи: без неё фоновая проверка сочла бы
+    # собственное сохранение чужой правкой и через минуту перечитала бы базу.
+    result["signature"] = folder_signature(root_path.resolve())
+    return result
+
+
 def move_article(
     root_path: Path, article_relative_path: str, target_folder_relative_path: str,
 ) -> Dict[str, Any]:
