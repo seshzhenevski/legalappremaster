@@ -1,10 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Права главного окна: запуск Python-sidecar для расчётов",
-  "windows": ["main"],
+  "description": "Права главного окна: запуск Python-sidecar для расчётов. core:window:allow-destroy нужен потому, что при подписке на закрытие окна Tauri перестаёт закрывать его сам и ждёт вызова destroy() из JavaScript; без этого права окно не закрывается вовсе. shell:allow-open ограничен в tauri.conf.json шаблоном: разрешены адреса http и https и файлы документов по расширению. Исполняемые файлы отклоняются, включая маскировку вида «отчёт.pdf.exe» — статьи базы знаний правят все пользователи, и клик по ссылке не должен запускать программу с сетевой папки.",
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
+    "core:window:allow-destroy",
     "shell:allow-execute",
     "shell:allow-open",
     "dialog:allow-open",
@@ -12,7 +15,11 @@
     "store:default",
     {
       "identifier": "fs:allow-read-text-file",
-      "allow": [{ "path": "**" }]
+      "allow": [
+        {
+          "path": "**"
+        }
+      ]
     },
     {
       "identifier": "shell:allow-spawn",

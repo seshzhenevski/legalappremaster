@@ -4,15 +4,18 @@
   "description": "Юридический инструментарий на Tauri 2 + Python",
   "scripts": {
     "tauri": "tauri",
-    "dev": "npm run build:css && tauri dev",
-    "build": "npm run build:css && tauri build",
+    "dev": "npm run build:vendor && npm run build:css && tauri dev",
+    "build": "npm run build:vendor && npm run build:css && tauri build",
     "build:css": "tailwindcss -i ./src/css/input.css -o ./src/css/tailwind.css --minify",
     "build:sidecar": "python build_sidecar.py",
-    "test:frontend": "node --test src/js/",
-    "test:backend": "cd src-python && python -m unittest discover tests"
+    "test:frontend": "node --test \"src/js/**/*.test.js\"",
+    "test:backend": "cd src-python && python -m unittest discover tests",
+    "build:vendor": "esbuild src/js/vendor/toastui-entry.js --bundle --format=iife --global-name=ToastUIEditor --minify --legal-comments=none --outfile=src/js/vendor/toastui-editor.js"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
+    "@toast-ui/editor": "3.2.2",
+    "esbuild": "^0.24.0",
     "lucide-static": "^1.25.0",
     "tailwindcss": "^3.4.19"
   }

@@ -7,7 +7,13 @@
   <!-- Ранняя установка темы до отрисовки (без вспышки). Блокирующий скрипт из
        'self' — инлайн запрещён CSP (script-src 'self'). -->
   <script src="js/theme-boot.js"></script>
+  <link rel="stylesheet" href="css/vendor/toastui-editor.css">
+  <link rel="stylesheet" href="css/vendor/toastui-editor-dark.css">
   <link rel="stylesheet" href="css/tailwind.css" />
+  <!-- Подгонка редактора под оформление приложения. Отдельным файлом:
+       Tailwind вырезает правила для классов, которых нет в исходниках,
+       а их создаёт библиотека редактора в момент работы. -->
+  <link rel="stylesheet" href="css/kb-editor-theme.css">
   <style>
     /*
       Единая тонкая полоса прокрутки фиксированной ширины (8px).
@@ -647,6 +653,11 @@
           class="sidebar-item" title="Калькулятор госпошлины">
           <span class="sidebar-icon" aria-hidden="true"><svg class="lucide" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 18v-7" /> <path d="M11.119 2.205a2 2 0 0 1 1.762 0l7.84 3.846A.5.5 0 0 1 20.5 7h-17a.5.5 0 0 1-.22-.949z" /> <path d="M14 18v-7" /> <path d="M18 18v-7" /> <path d="M3 22h18" /> <path d="M6 18v-7" /></svg></span>
           <span class="sidebar-label">Калькулятор госпошлины</span>
+        </button>
+        <button data-tab-target="panel-knowledge-base" type="button"
+          class="sidebar-item" title="База знаний">
+          <span class="sidebar-icon" aria-hidden="true"><svg class="lucide" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20" /></svg></span>
+          <span class="sidebar-label">База знаний</span>
         </button>
         <button data-tab-target="panel-dashboard" type="button"
           class="sidebar-item" title="Дашборд">
@@ -1356,6 +1367,248 @@
       </div>
     </section>
 
+    <!-- Панель: База знаний -->
+    <section id="panel-knowledge-base" data-tab-panel class="hidden h-full relative">
+
+      <!-- Папка базы ещё не выбрана -->
+      <div id="kb-setup-pane" class="h-full flex items-center justify-center">
+        <div class="bg-white rounded-xl border border-slate-200 p-8 max-w-md text-center space-y-4">
+          <p class="font-medium text-slate-700">База знаний не настроена</p>
+          <p class="text-sm text-slate-500">
+            Укажите общую папку юридического департамента на сетевом диске —
+            в ней хранятся статьи и документы базы.
+          </p>
+          <button type="button" data-kb-choose-root class="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-oncolor text-sm font-medium py-2.5 px-4 rounded-lg mx-auto">
+            Выбрать папку
+          </button>
+        </div>
+      </div>
+
+      <!-- Чтение базы с сетевого диска -->
+      <div id="kb-loading-pane" class="hidden h-full flex items-center justify-center">
+        <p class="text-sm text-slate-500">Загружаю базу знаний…</p>
+      </div>
+
+      <!-- Папка недоступна: диск отключён, папку перенесли или нет прав -->
+      <div id="kb-unavailable-pane" class="hidden h-full flex items-center justify-center">
+        <div class="bg-white rounded-xl border border-slate-200 p-8 max-w-lg text-center space-y-4">
+          <p class="font-medium text-slate-700">Папка базы знаний недоступна</p>
+          <p id="kb-unavailable-path" class="text-sm text-slate-500 break-all"></p>
+          <p class="text-sm text-slate-500">
+            Проверьте подключение к сетевому диску или выберите папку заново.
+          </p>
+          <button type="button" data-kb-choose-root class="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-oncolor text-sm font-medium py-2.5 px-4 rounded-lg mx-auto">
+            Выбрать папку
+          </button>
+        </div>
+      </div>
+
+      <!-- Ошибка чтения -->
+      <div id="kb-error-pane" class="hidden h-full flex items-center justify-center">
+        <div class="bg-white rounded-xl border border-slate-200 p-8 max-w-lg text-center space-y-3">
+          <p class="font-medium text-slate-700">Не удалось прочитать базу знаний</p>
+          <p id="kb-error-text" class="text-sm text-slate-500 break-all"></p>
+        </div>
+      </div>
+
+      <!-- Сама база: дерево слева, статья справа -->
+      <div id="kb-content-pane" class="hidden h-full grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-5">
+
+        <!-- Левая колонка: поиск и дерево -->
+        <div class="bg-white rounded-xl border border-slate-200 flex flex-col min-h-0">
+          <div class="p-3 border-b border-slate-100 space-y-2">
+            <input id="kb-search" type="search" autocomplete="off"
+              placeholder="Поиск по заголовкам и тексту"
+              class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+            <!-- Действия панели — иконками, как в остальном приложении.
+                 Подписи занимали всю ширину узкой колонки; смысл каждого
+                 действия читается по значку, а слово осталось в подсказке
+                 и в aria-label, чтобы кнопка не онемела для экранного диктора. -->
+            <div class="flex gap-2">
+              <button id="kb-refresh-button" type="button"
+                class="flex items-center justify-center w-9 h-9 bg-slate-100 hover:bg-slate-200 rounded-lg"
+                aria-label="Обновить" title="Обновить: перечитать базу с сетевого диска">
+                <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /> <path d="M21 3v5h-5" /> <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /> <path d="M8 16H3v5" /></svg>
+              </button>
+              <button id="kb-trash-button" type="button"
+                class="flex items-center justify-center w-9 h-9 bg-slate-100 hover:bg-slate-200 rounded-lg"
+                aria-label="Корзина" title="Корзина: удалённые статьи">
+                <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 11v6" /> <path d="M14 11v6" /> <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /> <path d="M3 6h18" /> <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+              </button>
+              <button data-kb-choose-root type="button"
+                class="flex items-center justify-center w-9 h-9 bg-slate-100 hover:bg-slate-200 rounded-lg"
+                aria-label="Сменить папку" title="Сменить папку базы знаний">
+                <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" /></svg>
+              </button>
+            </div>
+          </div>
+          <div id="kb-tree" class="flex-1 min-h-0 overflow-y-auto thin-scroll p-2"></div>
+        </div>
+
+        <!-- Правая колонка: статья -->
+        <div class="bg-white rounded-xl border border-slate-200 flex flex-col min-h-0">
+          <div id="kb-article-placeholder" class="flex-1 flex items-center justify-center">
+            <p class="text-sm text-slate-500">Выберите статью слева.</p>
+          </div>
+
+          <article id="kb-article" class="hidden flex-1 min-h-0 flex flex-col">
+            <header class="p-5 border-b border-slate-100 space-y-3">
+              <!-- Откуда статья. По одному заголовку этого не понять, а
+                   сегменты заодно работают навигацией по дереву. -->
+              <nav id="kb-breadcrumbs" class="kb-breadcrumbs" aria-label="Путь статьи"></nav>
+
+              <div class="flex items-start gap-3">
+                <span id="kb-article-icon" class="text-2xl leading-none" aria-hidden="true"></span>
+                <h2 id="kb-article-title" class="text-xl font-medium text-slate-700 flex-1"></h2>
+                <div class="flex gap-2 shrink-0">
+                  <button id="kb-edit-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm">Изменить</button>
+                  <!-- Редкие действия над статьёй — в меню: в шапке они
+                       спорили за внимание с «Изменить», ради которого сюда и
+                       приходят. -->
+                  <button id="kb-article-menu-button" type="button"
+                    class="kb-kebab-button kb-kebab-button-header"
+                    aria-haspopup="menu" aria-expanded="false"
+                    aria-label="Действия со статьёй" title="Действия со статьёй">⋮</button>
+                  <button id="kb-save-button" type="button" class="bg-blue-600 hover:bg-blue-700 text-oncolor rounded-lg px-3 py-1.5 text-sm font-medium hidden">Сохранить</button>
+                  <button id="kb-cancel-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm hidden">Отмена</button>
+                </div>
+              </div>
+
+              <!-- Правка заголовка и статуса: только в режиме редактирования -->
+              <div id="kb-edit-properties" class="hidden flex flex-wrap items-center gap-2">
+                <input id="kb-edit-title" type="text"
+                  class="flex-1 min-w-[200px] px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  placeholder="Заголовок статьи">
+                <select id="kb-edit-status"
+                  class="px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                  <option value="актуально">актуально</option>
+                  <option value="устарело">устарело</option>
+                  <option value="черновик">черновик</option>
+                </select>
+                <!-- Значок: поле оставлено для тех, кому нужен свой символ,
+                     а рядом кнопка с готовым набором — догадаться, что в пустое
+                     поле надо вставить эмодзи, невозможно. -->
+                <div class="flex items-center gap-1">
+                  <input id="kb-edit-icon" type="text" maxlength="4"
+                    class="w-16 text-center px-2 py-2 border border-slate-300 rounded-lg text-sm"
+                    placeholder="значок" title="Значок статьи в дереве">
+                  <button id="kb-edit-icon-picker" type="button"
+                    class="flex items-center justify-center w-9 h-9 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-500"
+                    aria-haspopup="menu" aria-expanded="false"
+                    aria-label="Выбрать значок" title="Выбрать значок из набора"><svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10" /> <path d="M8 14s1.5 2 4 2 4-2 4-2" /> <line x1="9" x2="9.01" y1="9" y2="9" /> <line x1="15" x2="15.01" y1="9" y2="9" /></svg></button>
+                </div>
+                <label class="flex items-center gap-1.5 text-sm text-slate-500"
+                  title="Не показывать оглавление в этой статье">
+                  <input id="kb-edit-no-toc" type="checkbox" class="w-4 h-4">
+                  Без оглавления
+                </label>
+              </div>
+
+              <div id="kb-article-properties" class="flex flex-wrap items-center gap-2"></div>
+              <div id="kb-lock-banner" class="hidden kb-banner"></div>
+
+              <!-- Пометка о чужой правке (§4.4). Текст статьи из-под
+                   читающего не подменяется: он сам решает, когда перечитать. -->
+              <div id="kb-update-banner" class="hidden kb-banner kb-banner-info">
+                <span id="kb-update-banner-text" class="flex-1"></span>
+                <button id="kb-update-banner-action" type="button" class="kb-banner-action"></button>
+              </div>
+            </header>
+
+            <!-- Просмотр -->
+            <div id="kb-view-mode" class="flex-1 min-h-0 overflow-y-auto thin-scroll">
+              <nav id="kb-article-toc" class="hidden"></nav>
+              <div id="kb-article-body" class="kb-body p-5"></div>
+              <div id="kb-backlinks" class="hidden"></div>
+            </div>
+
+            <!-- Правка: исходный текст слева, вид статьи справа -->
+            <div id="kb-edit-mode" class="hidden flex-1 min-h-0 flex flex-col">
+
+              <!-- Переключатель способа правки. Оба режима пишут в файл один
+                   и тот же Markdown, различается только то, что видит человек. -->
+              <div class="flex items-center gap-1 px-4 pt-2">
+                <button id="kb-mode-visual" type="button" class="kb-mode-button"
+                  title="Править так, как статья будет выглядеть">Как в документе</button>
+                <button id="kb-mode-source" type="button" class="kb-mode-button"
+                  title="Править разметку с предпросмотром">Разметка</button>
+              </div>
+
+              <!-- Режим разметки: слева исходный текст, справа результат -->
+              <div id="kb-source-mode" class="flex-1 min-h-0 flex flex-col">
+                <div id="kb-format-toolbar" class="flex flex-wrap gap-1 px-4 py-2 border-b border-slate-100"></div>
+                <div class="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2">
+                  <textarea id="kb-editor" spellcheck="true"
+                    class="kb-editor-area thin-scroll" placeholder="Текст статьи"></textarea>
+                  <div id="kb-preview" class="kb-body p-5 overflow-y-auto thin-scroll border-l border-slate-100"></div>
+                </div>
+              </div>
+
+              <!-- Режим «как в документе» -->
+              <div id="kb-visual-mode" class="hidden flex-1 min-h-0 p-3">
+                <div id="kb-visual-editor" class="h-full"></div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <!-- Предыдущие версии статьи -->
+      <div id="kb-versions-overlay" class="hidden kb-overlay">
+        <div class="kb-dialog">
+          <div class="flex items-center justify-between gap-4 mb-3">
+            <p class="font-medium text-slate-700">Предыдущие версии</p>
+            <button id="kb-versions-close" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm">Закрыть</button>
+          </div>
+          <p class="text-sm text-slate-500 mb-3">
+            Хранятся последние 10 сохранений. Восстановление само попадает
+            в версии — откат можно отменить.
+          </p>
+          <div id="kb-versions-list" class="kb-versions-list thin-scroll"></div>
+          <div id="kb-version-preview" class="kb-body kb-version-preview thin-scroll hidden"></div>
+        </div>
+      </div>
+
+      <!-- Корзина -->
+      <div id="kb-trash-overlay" class="hidden kb-overlay">
+        <div class="kb-dialog">
+          <div class="flex items-center justify-between gap-4 mb-3">
+            <p class="font-medium text-slate-700">Корзина</p>
+            <button id="kb-trash-close" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm">Закрыть</button>
+          </div>
+          <p class="text-sm text-slate-500 mb-3">
+            Удалённые статьи хранятся здесь и не пропадают. Восстановление
+            возвращает статью туда, откуда её удалили.
+          </p>
+          <div id="kb-trash-list" class="kb-versions-list thin-scroll"></div>
+        </div>
+      </div>
+
+      <!-- Статью изменил кто-то ещё -->
+      <div id="kb-conflict-overlay" class="hidden kb-overlay">
+        <div class="kb-dialog">
+          <p class="font-medium text-slate-700 mb-2">Статья изменена другим пользователем</p>
+          <p class="text-sm text-slate-500 mb-4">
+            Пока вы правили, статью сохранил кто-то ещё. Ваши правки не записаны
+            и не потеряны — выберите, что с ними сделать.
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <button id="kb-conflict-copy" type="button" class="bg-blue-600 hover:bg-blue-700 text-oncolor rounded-lg px-3 py-1.5 text-sm font-medium">
+              Сохранить мою версию отдельной статьёй
+            </button>
+            <button id="kb-conflict-reload" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm">
+              Открыть чужую версию
+            </button>
+            <button id="kb-conflict-back" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm">
+              Вернуться к правке
+            </button>
+          </div>
+          <p class="text-sm text-slate-500 mt-4 mb-1">Чужая версия:</p>
+          <div id="kb-conflict-their-body" class="kb-body kb-version-preview thin-scroll"></div>
+        </div>
+      </div>
+    </section>
+
     <!-- Панель: Дашборд -->
     <section id="panel-dashboard" data-tab-panel class="hidden h-full">
       <div id="dashboard-scroll" class="h-full min-h-0 overflow-y-auto thin-scroll pr-1">
@@ -1764,6 +2017,7 @@
     приложение работает без интернета, CDN здесь недоступен. Обычный script
     (а не модуль) — UMD-сборка кладёт Chart в window до запуска app.js.
   -->
+  <script src="js/vendor/toastui-editor.js"></script>
   <script src="js/vendor/chart.umd.js"></script>
   <script type="module" src="js/app.js"></script>
 </body>

@@ -44,6 +44,114 @@ class RustPythonContractTests(unittest.TestCase):
         parsed = json.loads(response_line)
         self.assertIn("result", parsed)
 
+    def test_knowledge_base_method_through_contract(self):
+        """Метод load_knowledge_base работает через контракт Rust ↔ Python."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as base_directory:
+            request = json.dumps({
+                "id": 1,
+                "method": "load_knowledge_base",
+                "params": {"root_path": base_directory},
+            })
+            response = json.loads(process_single_request(request))
+
+        self.assertNotIn("error", response)
+        self.assertTrue(response["result"]["available"])
+        self.assertEqual(response["result"]["articles"], [])
+
+    def test_missing_knowledge_base_folder_is_not_an_error(self):
+        """Недоступная папка базы возвращается признаком, а не ошибкой RPC."""
+        request = json.dumps({
+            "id": 1,
+            "method": "load_knowledge_base",
+            "params": {"root_path": "Z:/нет такой папки/база"},
+        })
+        response = json.loads(process_single_request(request))
+
+        self.assertNotIn("error", response)
+        self.assertFalse(response["result"]["available"])
+
+    def test_every_knowledge_base_method_is_wired(self):
+        """
+        Каждый зарегистрированный метод базы знаний действительно вызывается.
+
+        Ошибка вида «name ... is not defined» возникает, когда обработчик
+        написан, но нужная функция логики не попала в импорты диспетчера:
+        модуль при этом импортируется без нареканий, а падает только при
+        обращении к методу. Юнит-тесты логики такое не ловят по определению.
+        """
+        import tempfile
+        from pathlib import Path
+        from rpc.dispatcher import METHOD_HANDLERS
+
+        with tempfile.TemporaryDirectory() as base:
+            # Документ для проверки вложения: метод копирует реальный файл.
+            source_document = Path(base) / "Договор.docx"
+            source_document.write_bytes(b"docx")
+
+            # Заготовки: создаём раздел и статью, чтобы методам было с чем работать.
+            article = json.loads(process_single_request(json.dumps({
+                "id": 1, "method": "create_kb_article",
+                "params": {"root_path": base, "folder_relative_path": "Раздел",
+                           "title": "Проверка"},
+            })))["result"]
+
+            parameters = {
+                "load_knowledge_base": {"root_path": base},
+                "scan_kb_changes": {"root_path": base},
+                "read_kb_article": {"root_path": base,
+                                    "relative_path": article["relative_path"]},
+                "save_kb_article": {"root_path": base,
+                                    "relative_path": article["relative_path"],
+                                    "properties": {"id": article["id"],
+                                                   "title": "Проверка"},
+                                    "body": "Текст"},
+                "create_kb_article": {"root_path": base,
+                                      "folder_relative_path": "Раздел",
+                                      "title": "Ещё одна"},
+                "acquire_kb_lock": {"root_path": base, "article_id": article["id"]},
+                "release_kb_lock": {"root_path": base, "article_id": article["id"]},
+                "check_kb_lock": {"root_path": base, "article_id": article["id"]},
+                "list_kb_versions": {"root_path": base, "article_id": article["id"]},
+                "list_kb_trash": {"root_path": base},
+                "move_kb_article": {"root_path": base,
+                                    "relative_path": article["relative_path"],
+                                    "target_folder_relative_path": ""},
+                "create_kb_folder": {"root_path": base, "parent_relative_path": "",
+                                     "folder_name": "Новый раздел"},
+                "rename_kb_folder": {"root_path": base,
+                                     "folder_relative_path": "Новый раздел",
+                                     "new_name": "Переименованный"},
+                "delete_kb_folder": {"root_path": base,
+                                     "folder_relative_path": "Переименованный"},
+                "attach_kb_document": {"root_path": base,
+                                       "article_id": article["id"],
+                                       "source_path": str(source_document)},
+                "check_kb_document": {"root_path": base,
+                                      "target": ".assets/kb-1/Нет.docx"},
+            }
+
+            kb_methods = [name for name in METHOD_HANDLERS
+                          if "kb" in name or "knowledge" in name]
+            unchecked = [name for name in kb_methods if name not in parameters]
+
+            for method_name, params in parameters.items():
+                self.assertIn(method_name, METHOD_HANDLERS, method_name)
+                response = json.loads(process_single_request(json.dumps({
+                    "id": 1, "method": method_name, "params": params,
+                }, ensure_ascii=False)))
+                error = response.get("error", "")
+                self.assertNotIn("is not defined", error,
+                                 f"{method_name}: {error}")
+
+        # Методы, требующие особой подготовки, проверяются отдельными тестами;
+        # список ниже нужен, чтобы новый метод не остался вовсе без проверки.
+        self.assertEqual(sorted(unchecked), [
+            "delete_kb_article", "purge_kb_trash_entry",
+            "read_kb_version", "restore_kb_trash_entry", "restore_kb_version",
+        ])
+
     def test_penalty_method_through_contract(self):
         """Метод calculate_penalty работает через контракт Rust ↔ Python."""
         request = json.dumps({

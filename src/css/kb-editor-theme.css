@@ -1,0 +1,115 @@
+/* kb-editor-theme.css
+   Подгонка редактора «как в документе» под оформление приложения.
+
+   Файл намеренно отдельный и не проходит через Tailwind: тот выбрасывает
+   правила для классов, которых нет в исходниках, а эти классы библиотека
+   создаёт в момент работы. Из input.css такие правила молча исчезали при
+   сборке — переопределения не применялись вовсе.
+
+   Подключается после стилей библиотеки, см. index.html. */
+
+/* ── Подгонка редактора «как в документе» под оформление приложения ──
+   Библиотека приносит свой внешний вид: рамки, скругления и шрифты у неё
+   свои. Переопределяем ровно то, что бросается в глаза рядом с остальными
+   вкладками, не трогая внутреннюю вёрстку — иначе обновление библиотеки
+   будет ломать оформление. */
+.toastui-editor-defaultUI {
+  border: none !important;
+  font-family: inherit !important;
+}
+.toastui-editor-defaultUI .toastui-editor-mode-switch,
+.toastui-editor-defaultUI .toastui-editor-md-tab-container {
+  /* Собственные переключатели библиотеки — «Markdown/WYSIWYG» и
+     «Редактор/Просмотр». В нашей связке они мертвы: режим разметки у нас
+     свой, а библиотечный редактор Markdown не показывается никогда. */
+  display: none !important;
+}
+
+/* Шапка таблицы в правке должна выглядеть так же, как в готовой статье,
+   иначе при сохранении таблица заметно меняется на вид. */
+.toastui-editor-contents th {
+  background: var(--veil) !important;
+  color: var(--ink) !important;
+  font-weight: 500 !important;
+}
+.toastui-editor-toolbar {
+  background: transparent !important;
+  border-bottom: 1px solid var(--hairline) !important;
+}
+.toastui-editor-defaultUI-toolbar {
+  background: transparent !important;
+  border: none !important;
+}
+.toastui-editor-ww-container,
+.toastui-editor-ww-container .toastui-editor-contents {
+  background: transparent !important;
+}
+.toastui-editor-contents {
+  font-family: inherit !important;
+  font-size: 14px !important;
+  line-height: 1.65 !important;
+  color: var(--ink) !important;
+}
+.toastui-editor-contents p,
+.toastui-editor-contents li,
+.toastui-editor-contents td,
+.toastui-editor-contents th {
+  color: var(--ink) !important;
+}
+.toastui-editor-contents blockquote {
+  border-left: 3px solid rgb(var(--c-slate-300)) !important;
+  color: var(--ink-secondary) !important;
+}
+.toastui-editor-contents code {
+  background: var(--veil) !important;
+  color: var(--ink) !important;
+}
+.toastui-editor-contents a {
+  color: var(--accent) !important;
+}
+
+/* Наша кнопка в панели редактора.
+
+   Библиотека кладёт штатные кнопки прямо в flex-группу, а наш элемент
+   заворачивает в отдельную обёртку с display:inline-block. Из-за этого
+   кнопка выравнивалась по базовой линии текста и съезжала вниз относительно
+   соседних — обёртке нужно вести себя как обычный элемент группы.
+
+   Размеры кнопке задаёт правило самой библиотеки, поэтому здесь только
+   убирается фон-спрайт: у нашего значка он текстовый. */
+.toastui-editor-defaultUI .toastui-editor-toolbar-item-wrapper {
+  display: flex !important;
+  align-items: center;
+}
+
+.kb-toolbar-article-link {
+  background-image: none !important;
+  font-size: 15px;
+  line-height: 1;
+  color: #555;
+}
+.toastui-editor-dark .kb-toolbar-article-link {
+  color: #eee;
+}
+
+/* ── Классы, которые собирает JS ────────────────────────────────────────
+   Отрисовщик статьи строит имена классов на ходу: `kb-heading-${level}` для
+   заголовка и `kb-toc-level-${level}` для пункта оглавления. В исходниках
+   таких строк нет, поэтому Tailwind считает правила неиспользуемыми и
+   выбрасывает их из сборки — проверено: из tailwind.css они исчезали все,
+   включая давние правила для первых трёх уровней. Здесь они доживают до
+   пользователя. */
+
+.kb-heading-1 { font-size: 20px; }
+.kb-heading-2 { font-size: 17px; }
+.kb-heading-3 { font-size: 15px; }
+
+/* Глубокие уровни почти сливаются с текстом — так и задумано: они для
+   мелких пунктов внутри раздела, а не для новой главы. В оглавление они не
+   попадают. */
+.kb-heading-4 { font-size: 14px; }
+.kb-heading-5 { font-size: 13px; }
+.kb-heading-6 { font-size: 13px; color: var(--ink-secondary); }
+
+.kb-toc-level-2 { padding-left: 32px; }
+.kb-toc-level-3 { padding-left: 44px; }

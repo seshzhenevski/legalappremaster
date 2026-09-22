@@ -198,3 +198,222 @@ export async function requestDashboardData(credentialsPath, spreadsheetId) {
     spreadsheet_id: spreadsheetId,
   });
 }
+
+/**
+ * Запрашивает у бэкенда базу знаний целиком.
+ *
+ * Принимает путь к корневой папке на сетевом диске. Возвращает признак
+ * доступности папки, дерево разделов и все статьи с текстом. Загрузка идёт
+ * одним вызовом намеренно: каждое обращение к бэкенду стоит около трёх
+ * секунд, поэтому вкладка платит это один раз при открытии, а дальше
+ * открывает статьи и ищет по ним из памяти.
+ */
+export async function requestKnowledgeBase(rootPath) {
+  return callBackendMethod("load_knowledge_base", { root_path: rootPath });
+}
+
+/**
+ * Спрашивает у бэкенда, менялось ли что-нибудь в папке базы знаний.
+ *
+ * Принимает путь к корневой папке. Возвращает признак доступности и примету
+ * состояния папки: совпала с прежней — чужих правок не было. Статьи при этом
+ * не читаются, поэтому проверку можно повторять раз в минуту, а полную
+ * загрузку заказывать только когда примета разошлась.
+ */
+export async function requestKnowledgeBaseScan(rootPath) {
+  return callBackendMethod("scan_kb_changes", { root_path: rootPath });
+}
+
+/**
+ * Запрашивает у бэкенда одну статью базы знаний заново.
+ *
+ * Принимает путь к корневой папке и относительный путь статьи. Нужен, когда
+ * статью изменил коллега и её надо обновить, не перечитывая базу целиком.
+ */
+export async function requestKnowledgeBaseArticle(rootPath, relativePath) {
+  return callBackendMethod("read_kb_article", {
+    root_path: rootPath,
+    relative_path: relativePath,
+  });
+}
+
+/**
+ * Сохраняет статью базы знаний.
+ *
+ * Принимает корень базы, относительный путь, свойства, текст, отпечаток
+ * содержимого, полученный при открытии, и идентификатор статьи. Возвращает
+ * признак conflict, если статью тем временем правил кто-то другой: в этом
+ * случае файл не перезаписывается, а чужая версия приходит в ответе.
+ *
+ * Тем же вызовом бэкенд снимает замок и отдаёт доступность документов и
+ * примету папки — всё, чем вкладка обновляет свою память. Раньше на это
+ * уходило три запуска процесса вместо одного.
+ */
+export async function requestKnowledgeBaseSave(request) {
+  return callBackendMethod("save_kb_article", request);
+}
+
+/**
+ * Создаёт статью базы знаний.
+ *
+ * Принимает корень базы, раздел, заголовок, автора и необязательный готовый
+ * текст. Возвращает карточку созданной статьи.
+ */
+export async function requestKnowledgeBaseCreate(request) {
+  return callBackendMethod("create_kb_article", request);
+}
+
+/**
+ * Захватывает статью на редактирование.
+ *
+ * Принимает корень базы, идентификатор статьи и признак перехвата брошенного
+ * замка. Возвращает признак успеха и сведения о том, кто держит статью.
+ */
+export async function requestKnowledgeBaseLock(rootPath, articleId, force = false) {
+  return callBackendMethod("acquire_kb_lock", {
+    root_path: rootPath, article_id: articleId, force: force,
+  });
+}
+
+/**
+ * Снимает замок со статьи. Чужой замок не снимается.
+ */
+export async function requestKnowledgeBaseUnlock(rootPath, articleId) {
+  return callBackendMethod("release_kb_lock", {
+    root_path: rootPath, article_id: articleId,
+  });
+}
+
+/**
+ * Перечисляет снимки предыдущих версий статьи, новые первыми.
+ */
+export async function requestKnowledgeBaseVersions(rootPath, articleId) {
+  return callBackendMethod("list_kb_versions", {
+    root_path: rootPath, article_id: articleId,
+  });
+}
+
+/**
+ * Читает содержимое одного снимка версии — показать до восстановления.
+ */
+export async function requestKnowledgeBaseVersion(rootPath, articleId, versionName) {
+  return callBackendMethod("read_kb_version", {
+    root_path: rootPath, article_id: articleId, version_name: versionName,
+  });
+}
+
+/**
+ * Восстанавливает статью из снимка версии.
+ *
+ * Восстановление идёт обычным сохранением, поэтому текущая версия сама
+ * попадает в снимки и откат можно отменить.
+ */
+export async function requestKnowledgeBaseVersionRestore(request) {
+  return callBackendMethod("restore_kb_version", request);
+}
+
+/**
+ * Удаляет статью базы знаний в корзину.
+ *
+ * Принимает корень базы и относительный путь. Статья не стирается, а
+ * переносится в служебную папку вместе с записью об исходном пути.
+ */
+export async function requestKnowledgeBaseDelete(rootPath, relativePath) {
+  return callBackendMethod("delete_kb_article", {
+    root_path: rootPath, relative_path: relativePath,
+  });
+}
+
+/**
+ * Перечисляет содержимое корзины, недавно удалённые первыми.
+ */
+export async function requestKnowledgeBaseTrash(rootPath) {
+  return callBackendMethod("list_kb_trash", { root_path: rootPath });
+}
+
+/**
+ * Возвращает статью из корзины на исходное место.
+ */
+export async function requestKnowledgeBaseTrashRestore(rootPath, entryId) {
+  return callBackendMethod("restore_kb_trash_entry", {
+    root_path: rootPath, entry_id: entryId,
+  });
+}
+
+/**
+ * Удаляет запись корзины окончательно.
+ */
+export async function requestKnowledgeBaseTrashPurge(rootPath, entryId) {
+  return callBackendMethod("purge_kb_trash_entry", {
+    root_path: rootPath, entry_id: entryId,
+  });
+}
+
+/**
+ * Переносит статью в другой раздел.
+ *
+ * Принимает корень базы, относительный путь статьи и раздел назначения.
+ * Содержимое файла не меняется, идентификатор сохраняется.
+ */
+export async function requestKnowledgeBaseMove(rootPath, relativePath, targetFolder) {
+  return callBackendMethod("move_kb_article", {
+    root_path: rootPath,
+    relative_path: relativePath,
+    target_folder_relative_path: targetFolder,
+  });
+}
+
+/**
+ * Создаёт раздел базы знаний внутри указанного.
+ */
+export async function requestKnowledgeBaseFolderCreate(rootPath, parentPath, name) {
+  return callBackendMethod("create_kb_folder", {
+    root_path: rootPath, parent_relative_path: parentPath, folder_name: name,
+  });
+}
+
+/**
+ * Переименовывает раздел базы знаний.
+ */
+export async function requestKnowledgeBaseFolderRename(rootPath, folderPath, newName) {
+  return callBackendMethod("rename_kb_folder", {
+    root_path: rootPath, folder_relative_path: folderPath, new_name: newName,
+  });
+}
+
+/**
+ * Удаляет пустой раздел базы знаний.
+ *
+ * Раздел со статьями не удаляется — в ответе приходит их количество.
+ */
+export async function requestKnowledgeBaseFolderDelete(rootPath, folderPath) {
+  return callBackendMethod("delete_kb_folder", {
+    root_path: rootPath, folder_relative_path: folderPath,
+  });
+}
+
+/**
+ * Вкладывает документ в статью базы знаний.
+ *
+ * Принимает корень базы, идентификатор статьи и путь к исходному файлу.
+ * Файл копируется в служебную папку рядом с базой; возвращается цель для
+ * ссылки и имя файла.
+ */
+export async function requestKnowledgeBaseAttach(rootPath, articleId, sourcePath) {
+  return callBackendMethod("attach_kb_document", {
+    root_path: rootPath, article_id: articleId, source_path: sourcePath,
+  });
+}
+
+/**
+ * Проверяет, доступен ли файл по ссылке.
+ *
+ * Нужна перед открытием: база была прочитана раньше, и документ могли
+ * удалить или отключить сетевой диск.
+ */
+export async function requestKnowledgeBaseDocumentCheck(rootPath, target) {
+  return callBackendMethod("check_kb_document", {
+    root_path: rootPath, target: target,
+  });
+}
+
