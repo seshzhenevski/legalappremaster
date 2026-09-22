@@ -901,6 +901,13 @@
   .kb-folder-row:hover .kb-kebab-button {
     color: var(--ink-secondary);
   }
+  /* В шапке статьи те же три точки стоят рядом с кнопкой «Изменить» и
+     равняются на неё по высоте. */
+  .kb-kebab-button-header {
+    width: 30px;
+    height: 30px;
+    font-size: 16px;
+  }
   .kb-kebab-button:hover,
   .kb-kebab-button[aria-expanded="true"] {
     background: var(--veil);
@@ -970,11 +977,6 @@
     color: var(--ink-muted);
   }
 
-  .kb-folder-toggle.kb-folder-active {
-    background: var(--accent-wash);
-    color: var(--accent);
-    font-weight: 500;
-  }
 
   /* ── Собственные диалоги вкладки ──────────────────────────────────────
      Системные window.confirm и window.prompt не используются: prompt в

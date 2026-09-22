@@ -124,9 +124,6 @@ let isCheckingRemoteChanges = false;
 let isBackendBusy = false;
 
 let selectedRelativePath = "";
-// Выбранный раздел — место, куда попадёт новая статья. Пустая строка
-// означает корень базы.
-let selectedFolderPath = "";
 let collapsedFolders = new Set();
 
 // Состояние правки. Отпечаток запоминается на момент открытия статьи: именно
@@ -195,18 +192,14 @@ function initEditor() {
     .addEventListener("click", handleSaveClick);
   document.getElementById("kb-cancel-button")
     .addEventListener("click", handleCancelClick);
-  document.getElementById("kb-versions-button")
-    .addEventListener("click", handleVersionsClick);
   document.getElementById("kb-versions-close")
     .addEventListener("click", () => hideOverlay("kb-versions-overlay"));
-  document.getElementById("kb-delete-button")
-    .addEventListener("click", handleDeleteClick);
+  document.getElementById("kb-article-menu-button")
+    .addEventListener("click", handleArticleMenuClick);
   document.getElementById("kb-trash-button")
     .addEventListener("click", handleTrashClick);
   document.getElementById("kb-trash-close")
     .addEventListener("click", () => hideOverlay("kb-trash-overlay"));
-  document.getElementById("kb-move-button")
-    .addEventListener("click", handleMoveClick);
 
   document.getElementById("kb-conflict-back")
     .addEventListener("click", () => hideOverlay("kb-conflict-overlay"));
@@ -736,8 +729,6 @@ function buildFolderNode(folderNode) {
   name.type = "button";
   name.className = "kb-folder-toggle";
   name.dataset.kbFolder = folderNode.relative_path;
-  name.classList.toggle("kb-folder-active",
-    folderNode.relative_path === selectedFolderPath);
   name.textContent = folderNode.name;
   row.appendChild(name);
 
@@ -832,28 +823,18 @@ function handleTreeClick(event) {
   const folderName = event.target.closest("[data-kb-folder]");
   if (folderName) {
     const folderPath = folderName.dataset.kbFolder;
-    // Клик по разделу раскрывает его, повторный — сворачивает: этого от
-    // папки и ждут, а прежнее «только подсветить» выглядело так, будто
-    // нажатие не сработало.
-    //
-    // Закрывает именно повторный клик по уже выбранному разделу, а не любой
-    // клик по раскрытому. Иначе раздел, раскрытый стрелкой или раскрытый
-    // изначально, схлопывался бы под рукой у того, кто всего лишь выбирает,
-    // куда положить новую статью, — и выбрать его можно было бы только с
-    // двух кликов, закрыв и открыв заново.
-    //
-    // Выбор идёт следом за раскрытием: раскрытый раздел становится тем, куда
-    // попадёт новая статья, свёрнутый перестаёт им быть. Без этого от
-    // выбранного раздела было бы не отвязаться, и новая статья всё время
-    // падала бы внутрь него.
-    if (folderPath === selectedFolderPath) {
+    // Клик по разделу раскрывает его, повторный — сворачивает. Пока раздел
+    // ещё и подсвечивался, правило было хитрее: закрывал только повторный
+    // клик по выбранному, иначе раздел схлопывался под рукой у того, кто
+    // всего лишь выбирал место для новой статьи. Выбора больше нет —
+    // действия живут в меню самого раздела, — и осталось простое правило,
+    // у которого на каждый клик есть видимый ответ.
+    if (collapsedFolders.has(folderPath)) {
+      collapsedFolders.delete(folderPath);
+    } else {
       collapsedFolders.add(folderPath);
-      selectFolder("");
-      return;
     }
-
-    collapsedFolders.delete(folderPath);
-    selectFolder(folderPath);
+    renderTreePane();
     return;
   }
 
@@ -868,6 +849,26 @@ function handleTreeClick(event) {
     showArticle(articleButton.dataset.kbArticle);
     renderTreePane();
   }
+}
+
+/**
+ * Открывает меню действий над открытой статьёй.
+ *
+ * Пункты те же, что были кнопками в шапке. Здесь они собираются заново на
+ * каждое открытие: статья могла смениться, а действия относятся к текущей.
+ */
+function handleArticleMenuClick() {
+  const button = document.getElementById("kb-article-menu-button");
+  if (isMenuOpenFor(button)) {
+    closeMenu();
+    return;
+  }
+
+  openMenu(button, [
+    { label: "Предыдущие версии", onSelect: handleVersionsClick },
+    { label: "Перенести в раздел", onSelect: handleMoveClick },
+    { label: "Удалить статью", danger: true, onSelect: handleDeleteClick },
+  ]);
 }
 
 /**
@@ -950,15 +951,15 @@ function handleArticlePathClick(event) {
 }
 
 /**
- * Показывает раздел в дереве и делает его выбранным.
+ * Показывает раздел в дереве.
  *
- * Принимает путь раздела. Раскрывает все ветки по пути: раздел, лежащий
- * внутри свёрнутого родителя, иначе остался бы не виден, и переход по пути
- * выглядел бы как ничего не сделавший.
+ * Принимает путь раздела. Раскрывает все ветки по пути — раздел внутри
+ * свёрнутого родителя иначе остался бы не виден — и подводит строку раздела
+ * к глазам: в длинном дереве раскрытая ветка может оказаться далеко внизу,
+ * и переход по пути выглядел бы как ничего не сделавший.
  */
 function revealFolderInTree(folderPath) {
   if (!folderPath) {
-    selectFolder("");
     return;
   }
 
@@ -966,7 +967,12 @@ function revealFolderInTree(folderPath) {
   parts.forEach((_, index) => {
     collapsedFolders.delete(parts.slice(0, index + 1).join("/"));
   });
-  selectFolder(folderPath);
+  renderTreePane();
+
+  const row = document.querySelector(`[data-kb-folder="${CSS.escape(folderPath)}"]`);
+  if (row) {
+    row.scrollIntoView({ block: "nearest" });
+  }
 }
 
 /**
@@ -1349,9 +1355,10 @@ function toggleEditChrome(isEditing) {
   shown("kb-article-properties", !isEditing);
   shown("kb-article-title", !isEditing);
   shown("kb-edit-button", !isEditing);
-  shown("kb-versions-button", !isEditing);
-  shown("kb-delete-button", !isEditing);
-  shown("kb-move-button", !isEditing);
+  // Меню статьи в правке спрятано целиком: откатить версию или перенести
+  // статью, пока в редакторе лежит несохранённый текст, — верный способ его
+  // потерять.
+  shown("kb-article-menu-button", !isEditing);
   shown("kb-save-button", isEditing);
   shown("kb-cancel-button", isEditing);
 }
@@ -1696,8 +1703,7 @@ function hideOverlay(overlayId) {
 function setBusy(isBusy) {
   isBackendBusy = isBusy;
   ["kb-edit-button", "kb-save-button", "kb-cancel-button",
-   "kb-versions-button", "kb-refresh-button",
-   "kb-delete-button", "kb-trash-button", "kb-move-button"]
+   "kb-refresh-button", "kb-trash-button", "kb-article-menu-button"]
     .forEach((buttonId) => {
       const button = document.getElementById(buttonId);
       if (button) {
@@ -1874,18 +1880,6 @@ async function purgeFromTrash(entry) {
 // ── Разделы: выбор, создание, переименование, удаление ───────────────────────
 
 /**
- * Запоминает выбранный раздел и перерисовывает дерево.
- *
- * Принимает относительный путь раздела; пустая строка — корень базы. После
- * переезда действий в меню раздела выбор остался только подсветкой: он
- * показывает, где человек находится в дереве, и больше ни на что не влияет.
- */
-function selectFolder(relativePath) {
-  selectedFolderPath = relativePath;
-  renderTreePane();
-}
-
-/**
  * Собирает плоский список всех разделов базы для выбора в диалоге.
  *
  * Принимает узел дерева. Возвращает записи с относительным путём и подписью,
@@ -1930,7 +1924,9 @@ async function createFolderIn(parentFolderPath) {
       return;
     }
     await reloadKnowledgeBase(false);
-    selectFolder(result.relative_path);
+    // Созданный раздел показывается сразу: он мог появиться внутри свёрнутой
+    // ветки, и без этого выглядело бы, что ничего не произошло.
+    revealFolderInTree(result.relative_path);
     showToast(`Раздел «${name}» создан`);
   } catch (error) {
     showToast(`Не удалось создать раздел: ${describeError(error)}`);
@@ -1966,7 +1962,7 @@ async function renameFolder(folderPath) {
       knowledgeBase.rootPath, folderPath, newName,
     );
     await reloadKnowledgeBase(false);
-    selectFolder(result.relative_path);
+    revealFolderInTree(result.relative_path);
     showToast("Раздел переименован");
   } catch (error) {
     showToast(`Не удалось переименовать: ${describeError(error)}`);
@@ -2007,9 +2003,6 @@ async function deleteFolder(folderPath) {
         `В разделе ещё ${result.article_count} ст. — сначала разберитесь с ними`,
       );
       return;
-    }
-    if (selectedFolderPath === folderPath) {
-      selectedFolderPath = "";
     }
     await reloadKnowledgeBase(false);
     showToast("Раздел удалён");

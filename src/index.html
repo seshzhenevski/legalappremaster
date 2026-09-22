@@ -1462,12 +1462,13 @@
                 <h2 id="kb-article-title" class="text-xl font-medium text-slate-700 flex-1"></h2>
                 <div class="flex gap-2 shrink-0">
                   <button id="kb-edit-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm">Изменить</button>
-                  <button id="kb-versions-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm"
-                    title="Предыдущие версии статьи">Версии</button>
-                  <button id="kb-move-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm"
-                    title="Перенести статью в другой раздел">Перенести</button>
-                  <button id="kb-delete-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm"
-                    title="Удалить статью в корзину">Удалить</button>
+                  <!-- Редкие действия над статьёй — в меню: в шапке они
+                       спорили за внимание с «Изменить», ради которого сюда и
+                       приходят. -->
+                  <button id="kb-article-menu-button" type="button"
+                    class="kb-kebab-button kb-kebab-button-header"
+                    aria-haspopup="menu" aria-expanded="false"
+                    aria-label="Действия со статьёй" title="Действия со статьёй">⋮</button>
                   <button id="kb-save-button" type="button" class="bg-blue-600 hover:bg-blue-700 text-oncolor rounded-lg px-3 py-1.5 text-sm font-medium hidden">Сохранить</button>
                   <button id="kb-cancel-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm hidden">Отмена</button>
                 </div>
