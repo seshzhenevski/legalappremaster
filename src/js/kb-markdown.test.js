@@ -6,6 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  dropRedundantEscapes,
   escapeHtml,
   extractArticleLinks,
   extractHeadings,
@@ -322,3 +323,61 @@ test("документы не путаются со ссылками на ста
   assert.ok(html.includes("data-kb-document"));
 });
 
+// ── Обратные слеши ──────────────────────────────────────────────────────────
+// Редактор экранирует всё, что вставлено из Word: «\- начиная с 1 \(Первого\)
+// дня \, 0\,05%». До этих тестов слеши доезжали до экрана как есть.
+
+test("экранированные скобки и запятые показываются знаками", () => {
+  const html = renderMarkdown(String.raw`0\,05% за 1 \(Первый\) день`);
+  assert.ok(html.includes("0,05% за 1 (Первый) день"));
+  assert.ok(!html.includes("\\"));
+});
+
+test("экранированный дефис в начале строки не делает список", () => {
+  const html = renderMarkdown(String.raw`\- начиная с первого дня`);
+  assert.ok(!html.includes("<ul"));
+  assert.ok(html.includes("- начиная с первого дня"));
+});
+
+test("экранированная звёздочка не превращается в курсив", () => {
+  const html = renderMarkdown(String.raw`\*не курсив\*`);
+  assert.ok(!html.includes("<em>"));
+  assert.ok(html.includes("*не курсив*"));
+});
+
+test("экранированные квадратные скобки не делают ссылку", () => {
+  const html = renderMarkdown(String.raw`\[не ссылка\](kb-1)`);
+  assert.ok(!html.includes("<a "));
+  assert.ok(html.includes("[не ссылка]"));
+});
+
+test("слеш перед буквой остаётся слешем", () => {
+  // Путь к сетевой папке — обычное содержимое статьи юротдела.
+  const html = renderMarkdown(String.raw`C:\temp\договор`);
+  assert.ok(html.includes(String.raw`C:\temp\договор`));
+});
+
+test("экранирование внутри моноширинного участка не разбирается", () => {
+  const html = renderMarkdown("код `a\\,b` в строке");
+  assert.ok(html.includes("a\\,b"));
+});
+
+test("dropRedundantEscapes снимает слеши со скобок и запятых", () => {
+  const cleaned = dropRedundantEscapes(String.raw`1 \(Первый\) день \, 0\,05%\;`);
+  assert.equal(cleaned, "1 (Первый) день , 0,05%;");
+});
+
+test("dropRedundantEscapes бережёт то, что держит текст текстом", () => {
+  const source = String.raw`\- пункт \* звезда \# решётка \[скобка\]`;
+  assert.equal(dropRedundantEscapes(source), source);
+});
+
+test("dropRedundantEscapes не трогает блок кода", () => {
+  const source = ["```", String.raw`printf("%s\, строка")`, "```"].join("\n");
+  assert.equal(dropRedundantEscapes(source), source);
+});
+
+test("dropRedundantEscapes не трогает моноширинный участок в строке", () => {
+  const source = String.raw`текст \(в скобках\) и код ` + "`a\\,b`";
+  assert.equal(dropRedundantEscapes(source), "текст (в скобках) и код `a\\,b`");
+});

@@ -25,6 +25,18 @@ const HORIZONTAL_RULE_PATTERN = /^(-{3,}|\*{3,}|_{3,})$/;
 const CODE_FENCE_PATTERN = /^```/;
 const TABLE_SEPARATOR_PATTERN = /^\|?[\s:|-]+\|[\s:|-]*$/;
 
+// Обратный слеш перед знаком препинания снимает с него разметочный смысл:
+// «\- пункт» — это текст с дефисом, а не список, «0\,05%» — просто число.
+// Так экранирует редактор всё, что человек вставляет из Word, и без разбора
+// этих последовательностей слеши уезжали в статью прямо на экран.
+const ESCAPABLE_PUNCTUATION = "!\"#$%&'()*+,\\-./:;<=>?@[\\]^_`{|}~";
+const ESCAPED_CHARACTER_PATTERN = new RegExp(
+  `\\\\([${ESCAPABLE_PUNCTUATION}])`, "g",
+);
+const ESCAPED_LINE_START_PATTERN = new RegExp(
+  `^\\\\[${ESCAPABLE_PUNCTUATION}]`,
+);
+
 // Ссылка на другую статью хранится идентификатором, а не именем файла и
 // не заголовком: статью переименовывают и переносят, а ссылка должна
 // продолжать работать.
@@ -76,6 +88,49 @@ export function headingAnchorId(headingText, index) {
     .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-+|-+$/g, "");
   return `kb-heading-${index}-${slug}`.slice(0, 80);
+}
+
+// Знаки, которые экранировать незачем: в нашей разметке они ничего не
+// значат ни в начале строки, ни внутри неё. Скобки сюда входят намеренно —
+// «\(Первого\)» в тексте договора встречается на каждой строке, — а вот
+// квадратные скобки остаются экранированными, иначе пара «\[текст\]» и
+// освобождённая круглая скобка сложились бы в ссылку.
+const REDUNDANT_ESCAPE_PATTERN = /\\([(),;:'"?%$&@={}])/g;
+
+/**
+ * Снимает экранирование там, где оно ничего не защищает.
+ *
+ * Принимает разметку, возвращает её же без лишних обратных слешей.
+ * Редактор в режиме «как в документе» экранирует всё, что человек вставил
+ * из Word, целыми пригоршнями: «\- начиная с 1 \(Первого\) дня \, 0\,05%».
+ * Отрисовщик это понимает, но файл лежит в общей сетевой папке, и юристы
+ * открывают его блокнотом — там слеши превращают текст в мусор.
+ *
+ * Снимается только безопасное. Экранированный дефис в начале строки,
+ * решётка, звёздочка и квадратные скобки остаются: там слеш и вправду
+ * держит текст текстом.
+ *
+ * Блоки кода и моноширинные участки не трогаются — внутри них обратный слеш
+ * означает сам себя, и «\n» в примере кода должен остаться «\n».
+ */
+export function dropRedundantEscapes(markdownText) {
+  let insideCodeBlock = false;
+
+  return String(markdownText ?? "").split(/\r?\n/).map((line) => {
+    if (CODE_FENCE_PATTERN.test(line.trim())) {
+      insideCodeBlock = !insideCodeBlock;
+      return line;
+    }
+    if (insideCodeBlock) {
+      return line;
+    }
+    // Чётные куски — вне обратных кавычек, нечётные — внутри них.
+    return line.split("`")
+      .map((piece, index) => (
+        index % 2 === 0 ? piece.replace(REDUNDANT_ESCAPE_PATTERN, "$1") : piece
+      ))
+      .join("`");
+  }).join("\n");
 }
 
 /**
@@ -130,6 +185,16 @@ function renderInline(escapedText, articlesById, documents) {
     return `\uE000${codeFragments.length - 1}\uE000`;
   });
 
+  // Экранированные знаки прячутся тем же приёмом, что и моноширинные
+  // участки, и возвращаются в самом конце: иначе «\*текст\*» успел бы
+  // превратиться в курсив, а слеши остались бы на экране. Прячутся после
+  // моноширинных участков — внутри кода слеш означает сам себя.
+  const escapedCharacters = [];
+  text = text.replace(ESCAPED_CHARACTER_PATTERN, (whole, character) => {
+    escapedCharacters.push(character);
+    return `\uE001${escapedCharacters.length - 1}\uE001`;
+  });
+
   text = text.replace(
     /\[([^\]]+)\]\(([^)\s]+)\)/g,
     (whole, label, url) => renderLink(label, url, articlesById, documents),
@@ -138,9 +203,14 @@ function renderInline(escapedText, articlesById, documents) {
   text = text.replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>");
   text = text.replace(/(^|\s)_([^_]+)_/g, "$1<em>$2</em>");
 
-  return text.replace(
+  text = text.replace(
     /\uE000(\d+)\uE000/g,
     (whole, index) => `<code class="kb-code">${codeFragments[Number(index)]}</code>`,
+  );
+
+  return text.replace(
+    /\uE001(\d+)\uE001/g,
+    (whole, index) => escapedCharacters[Number(index)],
   );
 }
 
@@ -352,6 +422,17 @@ export function renderMarkdown(markdownText, articlesById, documents) {
     const trimmed = rawLine.trim();
     if (!trimmed) {
       flushAllBlocks();
+      continue;
+    }
+
+    if (ESCAPED_LINE_START_PATTERN.test(trimmed)) {
+      // Экранирование в начале строки для того и ставится, чтобы строка не
+      // стала списком, заголовком или цитатой. Проверять её дальнейшими
+      // образцами нельзя — «\- пункт» снова превратился бы в список.
+      flushList();
+      flushQuote();
+      flushTable();
+      paragraphLines.push(line);
       continue;
     }
 
