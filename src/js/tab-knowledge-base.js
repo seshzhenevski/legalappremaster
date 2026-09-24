@@ -39,6 +39,7 @@ import {
   extractArticleLinks,
   extractHeadings,
   renderMarkdown,
+  unescapeMarkdown,
 } from "./kb-markdown.js";
 import { createVisualEditor } from "./kb-wysiwyg.js";
 import {
@@ -386,6 +387,12 @@ function restoreSelection() {
  * что рисуется на экране, а память заполняется одинаково.
  */
 function applyLoadedBase(loaded) {
+  // Текст для поиска готовится один раз на загрузку: снимать экранирование
+  // на каждое нажатие клавиши в поиске — это сотни статей заново.
+  loaded.articles.forEach((article) => {
+    article.searchText = unescapeMarkdown(article.body);
+  });
+
   knowledgeBase.tree = loaded.tree;
   knowledgeBase.articles = loaded.articles;
   knowledgeBase.articlesByPath = new Map(
@@ -1545,6 +1552,7 @@ async function applySavedArticle(previousPath, savedBody, result) {
 
   article.properties = result.properties;
   article.body = savedBody;
+  article.searchText = unescapeMarkdown(savedBody);
   article.fingerprint = result.fingerprint;
   article.title = result.properties.title || article.title;
   article.status = result.properties.status || article.status;

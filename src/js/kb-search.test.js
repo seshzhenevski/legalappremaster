@@ -174,3 +174,25 @@ test("expandToWord не выходит за границы текста", () => 
   assert.deepEqual(word, { start: 0, end: 5 });
 });
 
+// ── Экранирование не мешает искать ──────────────────────────────────────────
+// В файле «Чек\-лист»: редактор защитил дефис. По запросу «чек-лист» статья
+// не находилась вовсе, потому что слеш стоял посередине слова.
+
+test("статья находится, несмотря на экранирование в тексте", () => {
+  const article = {
+    title: "Годовое собрание",
+    body: String.raw`Чек\-лист документов \(п\. 9\)`,
+    searchText: "Чек-лист документов (п. 9)",
+  };
+  const results = searchArticles([article], "чек-лист");
+
+  assert.equal(results.length, 1);
+  const snippet = results[0].snippets[0];
+  assert.equal(snippet.match, "Чек-лист");
+  assert.ok(!`${snippet.before}${snippet.match}${snippet.after}`.includes("\\"));
+});
+
+test("без подготовленного текста поиск работает по исходному", () => {
+  const article = { title: "Сроки", body: "Срок подачи — 30 дней" };
+  assert.equal(searchArticles([article], "подача").length, 1);
+});

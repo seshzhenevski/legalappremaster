@@ -187,8 +187,12 @@ export function searchArticles(articles, query) {
   const byBody = [];
 
   articles.forEach((article) => {
+    // Текст без экранирования: в файле «Чек\-лист», и по запросу «чек-лист»
+    // статья не находилась вовсе — обратный слеш стоял ровно посередине
+    // слова. Готовится один раз при загрузке базы, а не на каждое нажатие.
+    const body = article.searchText ?? article.body;
     const titleMatches = findMatches(normalizeForSearch(article.title), stem);
-    const bodyMatches = findMatches(normalizeForSearch(article.body), stem);
+    const bodyMatches = findMatches(normalizeForSearch(body), stem);
     if (!titleMatches.length && !bodyMatches.length) {
       return;
     }
@@ -199,7 +203,7 @@ export function searchArticles(articles, query) {
       inTitle: titleMatches.length > 0,
       snippets: bodyMatches
         .slice(0, MAX_SNIPPETS_PER_ARTICLE)
-        .map((position) => buildSnippet(article.body, position, stem.length)),
+        .map((position) => buildSnippet(body, position, stem.length)),
     };
     (titleMatches.length ? byTitle : byBody).push(result);
   });

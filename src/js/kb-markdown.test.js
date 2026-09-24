@@ -12,6 +12,7 @@ import {
   extractHeadings,
   headingAnchorId,
   renderMarkdown,
+  unescapeMarkdown,
 } from "./kb-markdown.js";
 
 /** Справочник статей, каким его передаёт вкладка из своей памяти. */
@@ -427,4 +428,27 @@ test("опасный HTML внутри цитаты экранируется р�
   const html = renderMarkdown("> <script>alert(1)</script>");
   assert.ok(html.includes("&lt;script&gt;"));
   assert.ok(!html.includes("&amp;lt;"));
+});
+
+// ── Экранирование в оглавлении ──────────────────────────────────────────────
+// Заголовок «## 1\. Сроки» редактор экранирует, чтобы точка после цифры не
+// сделала нумерованный список. В оглавлении этот слеш был виден.
+
+test("заголовок для оглавления отдаётся без экранирования", () => {
+  const headings = extractHeadings(String.raw`## 1\. Сроки \(ст\. 10 Устава\)`);
+  assert.equal(headings[0].text, "1. Сроки (ст. 10 Устава)");
+});
+
+test("якорь экранированного заголовка совпадает с проставленным при отрисовке", () => {
+  const source = String.raw`## 6\. Чек\-лист документов`;
+  const anchorId = extractHeadings(source)[0].anchorId;
+  assert.ok(renderMarkdown(source).includes(`id="${anchorId}"`));
+});
+
+test("unescapeMarkdown снимает слеши со знаков препинания", () => {
+  assert.equal(unescapeMarkdown(String.raw`Чек\-лист \(п\. 9\)`), "Чек-лист (п. 9)");
+});
+
+test("unescapeMarkdown не трогает слеш перед буквой", () => {
+  assert.equal(unescapeMarkdown(String.raw`C:\temp`), String.raw`C:\temp`);
 });

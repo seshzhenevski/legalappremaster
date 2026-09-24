@@ -98,6 +98,18 @@ export function headingAnchorId(headingText, index) {
 const REDUNDANT_ESCAPE_PATTERN = /\\([(),;:'"?%$&@={}])/g;
 
 /**
+ * Возвращает текст разметки так, как его увидит человек.
+ *
+ * Принимает строку разметки, снимает с знаков препинания обратные слеши.
+ * Нужно там, где разметка показывается простым текстом и разбирать её
+ * некому: оглавление, фрагменты поиска. В самой статье этим занимается
+ * отрисовка.
+ */
+export function unescapeMarkdown(markdownText) {
+  return String(markdownText ?? "").replace(ESCAPED_CHARACTER_PATTERN, "$1");
+}
+
+/**
  * Снимает экранирование там, где оно ничего не защищает.
  *
  * Принимает разметку, возвращает её же без лишних обратных слешей.
@@ -157,7 +169,11 @@ export function extractHeadings(markdownText) {
       const text = match[2].trim();
       headings.push({
         level: match[1].length,
-        text: text,
+        // Текст — для показа, поэтому без экранирования: «1\. Сроки» в
+        // оглавлении читалось как «1\. Сроки» вместе со слешем. Якорь
+        // по-прежнему считается от исходного текста, иначе он разошёлся бы
+        // с тем, что проставляет отрисовка, и переход вёл бы в пустоту.
+        text: unescapeMarkdown(text),
         anchorId: headingAnchorId(text, headings.length),
       });
     }
