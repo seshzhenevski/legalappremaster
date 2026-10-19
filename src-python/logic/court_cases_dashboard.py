@@ -98,6 +98,13 @@ CASE_COLUMN_ALIASES = {
     "status": ["статус"],
 }
 
+# В реестре «СУДЫ» ведут дела не только самого АО «Тривио»: в колонке
+# «Истец» встречаются и другие компании. В дашборд идут только свои дела —
+# по этому слову в наименовании истца. Сравнение по подстроке, потому что
+# форму собственности и кавычки пишут как придётся: «АО "Тривио"», «АО
+# Тривио», «ТРИВИО».
+OUR_PLAINTIFF_MARKER = "тривио"
+
 BANKRUPTCY_COLUMN_ALIASES = {
     "creditor": ["кредитор"],
     "debtor": ["должник"],
@@ -242,6 +249,10 @@ def _parse_case_rows(rows: list, warnings: dict) -> list[dict]:
     По ходу разбора отслеживает строки-разделители («2026 год») и приписывает
     каждому делу год той секции, под которой оно стоит. Сами разделители в
     статистику не попадают. Пустые строки пропускаются.
+
+    В статистику идут только дела, где истец — АО «Тривио»: в реестре ведут и
+    чужие дела, а дашборд считает свои. Пропущенные строки попадают в счётчик,
+    а не исчезают молча, — иначе расхождение с таблицей было бы необъяснимым.
     """
     if not rows:
         return []
@@ -249,6 +260,13 @@ def _parse_case_rows(rows: list, warnings: dict) -> list[dict]:
     columns = _map_columns(rows[0], CASE_COLUMN_ALIASES)
     cases = []
     current_year = None
+
+    # Колонку истца могли переименовать до неузнаваемости. Тогда фильтровать
+    # нечем, и лучше посчитать всё, чем показать пустой дашборд: расхождение
+    # видно сразу, а пустота выглядит как поломка приложения.
+    can_filter_by_plaintiff = "section" in columns
+    if not can_filter_by_plaintiff:
+        warnings["plaintiff_column_missing"] = True
 
     for offset, row in enumerate(rows[1:]):
         row_number = offset + 2  # +1 за заголовок, +1 за нумерацию строк с единицы
@@ -258,6 +276,10 @@ def _parse_case_rows(rows: list, warnings: dict) -> list[dict]:
         separator_year = _year_from_separator(_cell(row, columns, "section"))
         if separator_year:
             current_year = separator_year
+            continue
+
+        if can_filter_by_plaintiff and not _is_our_case(_cell(row, columns, "section")):
+            warnings["skipped_other_plaintiff"] += 1
             continue
 
         cases.append(_build_case(row, row_number, columns, current_year, warnings))
@@ -1119,6 +1141,21 @@ def _is_blank_row(row: list) -> bool:
     return all(cell is None or str(cell).strip() == "" for cell in row)
 
 
+def _is_our_case(plaintiff_value) -> bool:
+    """
+    Отвечает, наше ли это дело по наименованию истца.
+
+    Принимает значение ячейки «Истец». Ищет слово «Тривио» внутри
+    наименования: форму собственности, кавычки и регистр в реестре пишут
+    по-разному, а узнаётся компания всё равно по одному слову.
+
+    Пустая ячейка — не наше дело. Решение строгое намеренно: иначе строка, у
+    которой истца забыли указать, попадала бы в нашу статистику незаметно.
+    Сколько таких строк пропущено, видно в блоке предупреждений.
+    """
+    return OUR_PLAINTIFF_MARKER in _normalize_text(plaintiff_value)
+
+
 def _year_from_separator(offer_value) -> str | None:
     """
     Распознаёт строку-разделитель года.
@@ -1157,6 +1194,8 @@ def _new_warnings() -> dict:
     return {
         "cases_without_status": 0,
         "cases_without_debtor": 0,
+        "skipped_other_plaintiff": 0,
+        "plaintiff_column_missing": False,
         "unparsed_amounts": [],
         "unknown_statuses": [],
     }
@@ -1172,6 +1211,8 @@ def _finalize_warnings(warnings: dict) -> dict:
     return {
         "cases_without_status": warnings["cases_without_status"],
         "cases_without_debtor": warnings["cases_without_debtor"],
+        "skipped_other_plaintiff": warnings["skipped_other_plaintiff"],
+        "plaintiff_column_missing": warnings["plaintiff_column_missing"],
         "unparsed_amounts_count": len(warnings["unparsed_amounts"]),
         "unparsed_amounts": warnings["unparsed_amounts"][:WARNING_SAMPLES_LIMIT],
         "unknown_statuses_count": len(warnings["unknown_statuses"]),

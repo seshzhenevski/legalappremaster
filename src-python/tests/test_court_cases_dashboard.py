@@ -36,7 +36,14 @@ BANKRUPTCY_HEADER = [
 
 
 def case_row(**fields) -> list:
-    """Собирает строку листа «СУДЫ»: указываются только нужные колонки."""
+    """
+    Собирает строку листа «СУДЫ»: указываются только нужные колонки.
+
+    Истец по умолчанию — АО «Тривио»: в дашборд идут только свои дела, и без
+    истца строка вообще не попала бы в статистику. Тесты, которым важен
+    другой истец или разделитель года, передают section явно.
+    """
+    fields.setdefault("section", 'АО "Тривио"')
     by_title = {
         "section": "Истец", "debtor": "Должник", "inn": "ИНН",
         "in_work": "В работе", "court_date": "Передано в суд",
@@ -493,6 +500,76 @@ class PrepTermTests(unittest.TestCase):
         self.assertEqual(data["cases"]["by_year"]["2024"]["kpi"]["average_prep_days"], 30)
 
 
+class OurPlaintiffTests(unittest.TestCase):
+    """
+    В дашборд идут только дела, где истец — АО «Тривио».
+
+    В реестре ведут и чужие дела: их суммы и стадии не должны попадать ни в
+    показатели, ни в воронку.
+    """
+
+    def test_foreign_plaintiff_case_is_not_counted(self):
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(section='АО "Тривио"', debtor="ООО Ромашка", total=1000),
+            case_row(section='ООО "Чужая компания"', debtor="ООО Василёк", total=5000),
+        ], [])
+
+        self.assertEqual(data["cases"]["overall"]["kpi"]["cases_count"], 1)
+        self.assertEqual(data["cases"]["overall"]["kpi"]["claimed_total"], 1000.0)
+
+    def test_plaintiff_is_recognized_in_any_spelling(self):
+        # Форму собственности, кавычки и регистр пишут как придётся.
+        for spelling in ['АО "Тривио"', "АО Тривио", "ТРИВИО", "тривио", 'ао «тривио»']:
+            with self.subTest(spelling=spelling):
+                data = build_dashboard_data([
+                    CASE_HEADER,
+                    case_row(section=spelling, debtor="ООО Ромашка", total=1000),
+                ], [])
+                self.assertEqual(data["cases"]["overall"]["kpi"]["cases_count"], 1)
+
+    def test_row_without_plaintiff_is_not_counted(self):
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(section="", debtor="ООО Ромашка", total=1000),
+        ], [])
+
+        self.assertEqual(data["cases"]["overall"]["kpi"]["cases_count"], 0)
+
+    def test_skipped_rows_are_counted_in_warnings(self):
+        # Молча выброшенные строки объяснили бы расхождение с таблицей только
+        # после ручной сверки — поэтому их число видно в предупреждениях.
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(section='АО "Тривио"', debtor="ООО Ромашка", total=1000),
+            case_row(section='ООО "Чужая"', debtor="ООО Василёк", total=5000),
+            case_row(section="", debtor="ООО Пион", total=2000),
+        ], [])
+
+        self.assertEqual(data["warnings"]["skipped_other_plaintiff"], 2)
+
+    def test_year_separator_still_works(self):
+        # Разделитель года стоит в той же колонке и истцом не является.
+        data = build_dashboard_data([
+            CASE_HEADER,
+            case_row(section="2026 год"),
+            case_row(section='АО "Тривио"', debtor="ООО Ромашка", total=1000),
+        ], [])
+
+        self.assertEqual(data["cases"]["years"], ["2026"])
+        self.assertEqual(data["warnings"]["skipped_other_plaintiff"], 0)
+
+    def test_without_plaintiff_column_nothing_is_filtered_out(self):
+        # Колонку переименовали до неузнаваемости: пустой дашборд выглядел бы
+        # поломкой приложения, поэтому считаются все строки, но с пометкой.
+        header = ["Компания"] + CASE_HEADER[1:]
+        row = case_row(section="", debtor="ООО Ромашка", total=1000)
+        data = build_dashboard_data([header, row], [])
+
+        self.assertEqual(data["cases"]["overall"]["kpi"]["cases_count"], 1)
+        self.assertTrue(data["warnings"]["plaintiff_column_missing"])
+
+
 class RobustnessTests(unittest.TestCase):
     """Сводная проверка: в каждой строке чего-то не хватает — дашборд считается."""
 
@@ -505,7 +582,8 @@ class RobustnessTests(unittest.TestCase):
             case_row(debtor="Без ИНН", inn="", status="Процесс", total="—"),
             case_row(debtor="Только сумма и статус", status="Долг погашен / по ИЛ", recovered=300),
             [],
-            case_row(),
+            # Строка, в которой нет вообще ничего, включая истца.
+            case_row(section=""),
         ], [])
         kpi = data["cases"]["overall"]["kpi"]
         self.assertEqual(kpi["cases_count"], 4)

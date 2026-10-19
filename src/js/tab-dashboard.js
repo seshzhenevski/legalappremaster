@@ -1011,6 +1011,20 @@ function renderWarnings(warnings) {
   const block = document.getElementById("dashboard-warnings");
   const notes = [];
 
+  // Пропущенные чужие дела — не дефект реестра, а правило дашборда. Но
+  // показать их число надо: иначе расхождение с таблицей ничем не объяснить.
+  if (warnings.skipped_other_plaintiff > 0) {
+    notes.push(
+      `Строк с другим истцом пропущено: <b>${warnings.skipped_other_plaintiff}</b>`
+      + " — в дашборд идут только дела, где истец АО «Тривио».",
+    );
+  }
+  if (warnings.plaintiff_column_missing) {
+    notes.push(
+      "Колонка «Истец» не найдена — посчитаны <b>все</b> дела реестра,"
+      + " включая чужие. Проверьте заголовок колонки.",
+    );
+  }
   if (warnings.cases_without_status > 0) {
     notes.push(`Строк без статуса: <b>${warnings.cases_without_status}</b> (стадия выведена по датам и суммам).`);
   }
