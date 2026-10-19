@@ -1611,7 +1611,10 @@
 
     <!-- Панель: Дашборд -->
     <section id="panel-dashboard" data-tab-panel class="hidden h-full">
-      <div id="dashboard-scroll" class="h-full min-h-0 overflow-y-auto thin-scroll pr-1">
+      <!-- Отступ p-1 не для красоты: рамка фокуса выходит за элемент на
+           4 пикселя, а прокручиваемая область всё, что за её краем, обрезает.
+           Без отступа у фильтров в шапке срезался верх рамки. -->
+      <div id="dashboard-scroll" class="h-full min-h-0 overflow-y-auto thin-scroll p-1">
 
         <!-- Шапка вкладки: навигация, фильтр года, действия -->
         <div class="dashboard-toolbar flex flex-wrap items-center gap-2 mb-4">
@@ -1624,6 +1627,11 @@
             <div id="dashboard-title" class="font-semibold text-slate-800">Судебные дела · все годы</div>
             <div id="dashboard-updated-at" class="text-xs text-slate-400 min-h-[1rem]"></div>
           </div>
+          <select id="dashboard-plaintiff-filter"
+            class="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+            title="Истец">
+            <option value="all">Все</option>
+          </select>
           <select id="dashboard-year-filter"
             class="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
             <option value="">Все годы</option>
@@ -1878,6 +1886,11 @@
           <div id="claims-unavailable" class="hidden dash-card border-amber-200 bg-amber-50">
             <div class="dash-card-title text-amber-800">Реестр претензий недоступен</div>
             <div id="claims-unavailable-message" class="text-sm text-amber-900"></div>
+          </div>
+
+          <!-- Реестр не про этого истца: не ошибка, поэтому без янтаря -->
+          <div id="claims-not-applicable" class="hidden dash-card">
+            <div id="claims-not-applicable-message" class="text-sm text-slate-500"></div>
           </div>
 
           <div id="claims-content" class="hidden space-y-4">

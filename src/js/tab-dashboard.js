@@ -51,6 +51,8 @@ const TOP_DEBTORS_COLLAPSED = 3;
 // Загруженные данные и состояние экрана. selectedYear === null — общий обзор.
 let dashboardData = null;
 let selectedYear = null;
+// Истец, по которому показываются дела: "all" — весь реестр.
+let selectedPlaintiff = "all";
 let hasLoadedOnce = false;
 
 // Живые экземпляры Chart.js по id канваса: перед перерисовкой старый график
@@ -86,6 +88,9 @@ export function initDashboardTab() {
   document
     .getElementById("dashboard-year-filter")
     .addEventListener("change", (event) => selectYear(event.target.value || null));
+  document
+    .getElementById("dashboard-plaintiff-filter")
+    .addEventListener("change", (event) => selectPlaintiff(event.target.value));
 
   // Вкладка сама решает, когда ей грузиться: навигация о содержимом вкладок
   // не знает и знать не должна.
@@ -150,6 +155,7 @@ async function loadDashboard({ force }) {
     });
     hasLoadedOnce = true;
     selectedYear = null;
+    fillPlaintiffFilter();
     fillYearFilter();
     showUpdatedAt();
     render();
@@ -173,16 +179,61 @@ function selectYear(year) {
 }
 
 /**
+ * Переключает дашборд на дела одного истца или обратно на весь реестр.
+ *
+ * Данные не перезапрашиваются: бэкенд сразу посчитал срез на каждого истца.
+ * Годы у истцов свои, поэтому список годов собирается заново; выбранный год
+ * сохраняется, если он у этого истца есть, иначе экран возвращается к общему
+ * обзору, а не показывает год, которого у истца не было.
+ */
+function selectPlaintiff(key) {
+  selectedPlaintiff = key;
+  document.getElementById("dashboard-plaintiff-filter").value = key;
+
+  if (selectedYear !== null && !currentScope().cases.years.includes(selectedYear)) {
+    selectedYear = null;
+  }
+  fillYearFilter();
+  render();
+}
+
+/**
+ * Возвращает набор данных текущего истца: дела, банкротства, претензии.
+ *
+ * Для «Все» это верхний уровень ответа, для истца — его срез. Устроены они
+ * одинаково, поэтому вся отрисовка ниже работает с любым.
+ */
+function currentScope() {
+  if (selectedPlaintiff === "all") {
+    return dashboardData;
+  }
+  return dashboardData.by_plaintiff?.[selectedPlaintiff] || dashboardData;
+}
+
+/**
+ * Возвращает подпись выбранного истца для заголовка и печати.
+ */
+function currentPlaintiffLabel() {
+  if (selectedPlaintiff === "all") {
+    return "";
+  }
+  const item = (dashboardData.plaintiffs || [])
+    .find((plaintiff) => plaintiff.key === selectedPlaintiff);
+  return item ? item.label : "";
+}
+
+/**
  * Возвращает секцию показателей для текущего экрана.
  *
  * Общий обзор — сводные показатели по всем годам; экран года — показатели
  * только этого года (их посчитал бэкенд, здесь ничего не пересчитывается).
  */
 function currentCasesSection() {
+  const cases = currentScope().cases;
   if (selectedYear === null) {
-    return dashboardData.cases.overall;
+    return cases.overall;
   }
-  return dashboardData.cases.by_year[selectedYear] || emptySection();
+  return cases.by_year[selectedYear] || emptySection();
 }
 
 /**
@@ -226,9 +277,14 @@ function render() {
   document.getElementById("dashboard-back-button").classList.toggle("hidden", isOverview);
 
   const period = isOverview ? "все годы" : `${selectedYear} год`;
-  document.getElementById("dashboard-title").textContent = `Судебные дела · ${period}`;
+  const plaintiff = currentPlaintiffLabel();
+  // Истец виден и в заголовке, и в выгрузке PDF: лист без него легко принять
+  // за сводку по всему реестру.
+  document.getElementById("dashboard-title").textContent =
+    plaintiff ? `Судебные дела · ${plaintiff} · ${period}` : `Судебные дела · ${period}`;
   document.getElementById("dashboard-print-meta").textContent =
-    `Период: ${period} · Сформирован ${new Date().toLocaleDateString("ru-RU")}`;
+    `${plaintiff ? `Истец: ${plaintiff} · ` : ""}Период: ${period}`
+    + ` · Сформирован ${new Date().toLocaleDateString("ru-RU")}`;
 
   renderKpi(section.kpi);
   renderFunnel(section.funnel);
@@ -240,17 +296,17 @@ function render() {
   document.getElementById("dashboard-dynamics-card").classList.toggle("hidden", !isOverview);
   document.getElementById("dashboard-year-cards-block").classList.toggle("hidden", !isOverview);
   if (isOverview) {
-    renderDynamics(dashboardData.cases.dynamics);
-    renderYearCards(dashboardData.cases.dynamics);
+    renderDynamics(currentScope().cases.dynamics);
+    renderYearCards(currentScope().cases.dynamics);
   }
 
   renderBankruptcy(currentBankruptcySection());
   document.getElementById("bankruptcy-dynamics-card").classList.toggle("hidden", !isOverview);
   if (isOverview) {
-    renderBankruptcyDynamics(dashboardData.bankruptcy.dynamics);
+    renderBankruptcyDynamics(currentScope().bankruptcy.dynamics);
   }
 
-  renderClaims(dashboardData.claims, isOverview);
+  renderClaims(currentScope().claims, isOverview);
   renderWarnings(dashboardData.warnings);
 
   playAppearAnimation();
@@ -661,7 +717,7 @@ function toggleTopRows(body, toggle, totalRows) {
  * выбранного года банкротных дел нет — пустая секция с прочерками.
  */
 function currentBankruptcySection() {
-  const bankruptcy = dashboardData.bankruptcy;
+  const bankruptcy = currentScope().bankruptcy;
   if (selectedYear === null) {
     return bankruptcy.overall;
   }
@@ -852,6 +908,18 @@ function renderBankruptcyDynamics(dynamics) {
 function renderClaims(claims, isOverview) {
   const unavailable = document.getElementById("claims-unavailable");
   const content = document.getElementById("claims-content");
+  const notApplicable = document.getElementById("claims-not-applicable");
+  notApplicable.classList.add("hidden");
+
+  // Реестр ведётся по АО «Тривио»: у другого истца претензий в нём нет по
+  // определению. Это не сбой, поэтому и плашка не янтарная, как при ошибке.
+  if (claims && claims.not_applicable) {
+    content.classList.add("hidden");
+    unavailable.classList.add("hidden");
+    notApplicable.classList.remove("hidden");
+    document.getElementById("claims-not-applicable-message").textContent = claims.message;
+    return;
+  }
 
   if (!claims || !claims.available) {
     content.classList.add("hidden");
@@ -1011,18 +1079,10 @@ function renderWarnings(warnings) {
   const block = document.getElementById("dashboard-warnings");
   const notes = [];
 
-  // Пропущенные чужие дела — не дефект реестра, а правило дашборда. Но
-  // показать их число надо: иначе расхождение с таблицей ничем не объяснить.
-  if (warnings.skipped_other_plaintiff > 0) {
-    notes.push(
-      `Строк с другим истцом пропущено: <b>${warnings.skipped_other_plaintiff}</b>`
-      + " — в дашборд идут только дела, где истец АО «Тривио».",
-    );
-  }
   if (warnings.plaintiff_column_missing) {
     notes.push(
-      "Колонка «Истец» не найдена — посчитаны <b>все</b> дела реестра,"
-      + " включая чужие. Проверьте заголовок колонки.",
+      "Колонка «Истец» не найдена — фильтр по истцу не работает,"
+      + " по каждой компании покажутся нули. Проверьте заголовок колонки.",
     );
   }
   if (warnings.cases_without_status > 0) {
@@ -1347,13 +1407,38 @@ function showUpdatedAt() {
 function fillYearFilter() {
   const filter = document.getElementById("dashboard-year-filter");
   filter.innerHTML = '<option value="">Все годы</option>';
-  dashboardData.cases.years.forEach((year) => {
+  currentScope().cases.years.forEach((year) => {
     const option = document.createElement("option");
     option.value = year;
     option.textContent = year;
     filter.appendChild(option);
   });
-  filter.value = "";
+  filter.value = selectedYear || "";
+}
+
+/**
+ * Заполняет фильтр по истцу списком, который прислал бэкенд.
+ *
+ * Выбранный истец переживает «Обновить»: это выбор человека, а не экран,
+ * и сбрасывать его на каждое обновление данных незачем. Если истца в новом
+ * списке нет — возвращаемся к «Все».
+ */
+function fillPlaintiffFilter() {
+  const filter = document.getElementById("dashboard-plaintiff-filter");
+  const plaintiffs = dashboardData.plaintiffs || [{ key: "all", label: "Все" }];
+
+  filter.innerHTML = "";
+  plaintiffs.forEach((plaintiff) => {
+    const option = document.createElement("option");
+    option.value = plaintiff.key;
+    option.textContent = plaintiff.label;
+    filter.appendChild(option);
+  });
+
+  if (!plaintiffs.some((plaintiff) => plaintiff.key === selectedPlaintiff)) {
+    selectedPlaintiff = "all";
+  }
+  filter.value = selectedPlaintiff;
 }
 
 // ── Мелкие помощники отрисовки ──────────────────────────────────────────────

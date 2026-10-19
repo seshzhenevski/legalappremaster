@@ -500,23 +500,41 @@ class PrepTermTests(unittest.TestCase):
         self.assertEqual(data["cases"]["by_year"]["2024"]["kpi"]["average_prep_days"], 30)
 
 
-class OurPlaintiffTests(unittest.TestCase):
+class PlaintiffFilterTests(unittest.TestCase):
     """
-    В дашборд идут только дела, где истец — АО «Тривио».
+    Фильтр по истцу: «Все» — весь реестр, остальные — дела одной компании.
 
-    В реестре ведут и чужие дела: их суммы и стадии не должны попадать ни в
-    показатели, ни в воронку.
+    В реестре «СУДЫ» ведут дела нескольких компаний. Общий обзор считает все,
+    срез по истцу — только дела, где истцом указана эта компания.
     """
 
-    def test_foreign_plaintiff_case_is_not_counted(self):
-        data = build_dashboard_data([
+    def build(self):
+        return build_dashboard_data([
             CASE_HEADER,
             case_row(section='АО "Тривио"', debtor="ООО Ромашка", total=1000),
-            case_row(section='ООО "Чужая компания"', debtor="ООО Василёк", total=5000),
+            case_row(section='ООО "Сикора"', debtor="ООО Василёк", total=5000),
+            case_row(section="", debtor="ООО Пион", total=2000),
         ], [])
 
-        self.assertEqual(data["cases"]["overall"]["kpi"]["cases_count"], 1)
-        self.assertEqual(data["cases"]["overall"]["kpi"]["claimed_total"], 1000.0)
+    def test_all_plaintiffs_view_counts_every_case(self):
+        # «Все» — как было до фильтра: и чужие, и строки без истца.
+        kpi = self.build()["cases"]["overall"]["kpi"]
+        self.assertEqual(kpi["cases_count"], 3)
+        self.assertEqual(kpi["claimed_total"], 8000.0)
+
+    def test_plaintiff_view_counts_only_its_cases(self):
+        data = self.build()
+        trivio = data["by_plaintiff"]["trivio"]["cases"]["overall"]["kpi"]
+        sikora = data["by_plaintiff"]["sikora"]["cases"]["overall"]["kpi"]
+
+        self.assertEqual(trivio["cases_count"], 1)
+        self.assertEqual(trivio["claimed_total"], 1000.0)
+        self.assertEqual(sikora["cases_count"], 1)
+        self.assertEqual(sikora["claimed_total"], 5000.0)
+
+    def test_plaintiffs_are_listed_in_filter_order(self):
+        labels = [item["label"] for item in self.build()["plaintiffs"]]
+        self.assertEqual(labels, ["Все", "ТРИВИО", "ВИКТОРИ", "СИКОРА", "ГЛОРИЯ"])
 
     def test_plaintiff_is_recognized_in_any_spelling(self):
         # Форму собственности, кавычки и регистр пишут как придётся.
@@ -526,47 +544,77 @@ class OurPlaintiffTests(unittest.TestCase):
                     CASE_HEADER,
                     case_row(section=spelling, debtor="ООО Ромашка", total=1000),
                 ], [])
-                self.assertEqual(data["cases"]["overall"]["kpi"]["cases_count"], 1)
+                kpi = data["by_plaintiff"]["trivio"]["cases"]["overall"]["kpi"]
+                self.assertEqual(kpi["cases_count"], 1)
 
-    def test_row_without_plaintiff_is_not_counted(self):
+    def test_each_plaintiff_has_its_own_years(self):
+        # У истца, начавшего судиться в 2026-м, в фильтре лет не должно быть
+        # пустого 2025-го.
         data = build_dashboard_data([
             CASE_HEADER,
-            case_row(section="", debtor="ООО Ромашка", total=1000),
+            case_row(section="2025 год"),
+            case_row(section="АО Тривио", debtor="ООО Ромашка", total=1000),
+            case_row(section="2026 год"),
+            case_row(section="АО Тривио", debtor="ООО Пион", total=3000),
+            case_row(section="ООО Глория", debtor="ООО Василёк", total=2000),
         ], [])
 
-        self.assertEqual(data["cases"]["overall"]["kpi"]["cases_count"], 0)
+        self.assertEqual(data["cases"]["years"], ["2026", "2025"])
+        self.assertEqual(data["by_plaintiff"]["trivio"]["cases"]["years"], ["2026", "2025"])
+        self.assertEqual(data["by_plaintiff"]["gloria"]["cases"]["years"], ["2026"])
 
-    def test_skipped_rows_are_counted_in_warnings(self):
-        # Молча выброшенные строки объяснили бы расхождение с таблицей только
-        # после ручной сверки — поэтому их число видно в предупреждениях.
-        data = build_dashboard_data([
-            CASE_HEADER,
-            case_row(section='АО "Тривио"', debtor="ООО Ромашка", total=1000),
-            case_row(section='ООО "Чужая"', debtor="ООО Василёк", total=5000),
-            case_row(section="", debtor="ООО Пион", total=2000),
-        ], [])
+    def test_bankruptcy_is_filtered_by_creditor(self):
+        # В банкротстве истца нет — его место занимает кредитор.
+        data = build_dashboard_data([CASE_HEADER], [
+            BANKRUPTCY_HEADER,
+            ["АО Тривио", "ЛАДЕСОЛ", "А64-8362/2021", "АС Тамбовской области",
+             "Наблюдение", 1000, ""],
+            ["ООО Виктори", "ГЕМОНТ", "А65-19059/2022", "АС Республики Татарстан",
+             "Наблюдение", 2000, ""],
+        ])
 
-        self.assertEqual(data["warnings"]["skipped_other_plaintiff"], 2)
+        self.assertEqual(data["bankruptcy"]["overall"]["kpi"]["cases_count"], 2)
+        self.assertEqual(
+            data["by_plaintiff"]["victory"]["bankruptcy"]["overall"]["kpi"]["claimed_total"], 2000.0,
+        )
+        self.assertEqual(
+            data["by_plaintiff"]["trivio"]["bankruptcy"]["overall"]["kpi"]["cases_count"], 1,
+        )
 
-    def test_year_separator_still_works(self):
-        # Разделитель года стоит в той же колонке и истцом не является.
+    def test_claims_are_shown_only_for_trivio(self):
+        # Реестр претензий ведётся на бланке Тривио: под другим истцом его
+        # показывать нельзя — это выдало бы претензии Тривио за чужие.
+        data = build_dashboard_data([CASE_HEADER], [], claim_rows=[
+            CLAIM_HEADER,
+            claim_row(debtor="ООО Ромашка", number="60", date="01.11.2025", amount="1000"),
+        ])
+
+        self.assertTrue(data["by_plaintiff"]["trivio"]["claims"]["available"])
+        sikora_claims = data["by_plaintiff"]["sikora"]["claims"]
+        self.assertFalse(sikora_claims["available"])
+        self.assertTrue(sikora_claims["not_applicable"])
+        self.assertIn("Тривио", sikora_claims["message"])
+
+    def test_year_separator_is_not_a_plaintiff(self):
+        # Разделитель года стоит в той же колонке, но делом не становится.
         data = build_dashboard_data([
             CASE_HEADER,
             case_row(section="2026 год"),
             case_row(section='АО "Тривио"', debtor="ООО Ромашка", total=1000),
         ], [])
 
+        self.assertEqual(data["cases"]["overall"]["kpi"]["cases_count"], 1)
         self.assertEqual(data["cases"]["years"], ["2026"])
-        self.assertEqual(data["warnings"]["skipped_other_plaintiff"], 0)
 
-    def test_without_plaintiff_column_nothing_is_filtered_out(self):
-        # Колонку переименовали до неузнаваемости: пустой дашборд выглядел бы
-        # поломкой приложения, поэтому считаются все строки, но с пометкой.
+    def test_missing_plaintiff_column_is_reported(self):
+        # Колонку переименовали до неузнаваемости: срезы по истцам пусты, и без
+        # пометки это выглядело бы поломкой. Общий обзор при этом цел.
         header = ["Компания"] + CASE_HEADER[1:]
         row = case_row(section="", debtor="ООО Ромашка", total=1000)
         data = build_dashboard_data([header, row], [])
 
         self.assertEqual(data["cases"]["overall"]["kpi"]["cases_count"], 1)
+        self.assertEqual(data["by_plaintiff"]["trivio"]["cases"]["overall"]["kpi"]["cases_count"], 0)
         self.assertTrue(data["warnings"]["plaintiff_column_missing"])
 
 

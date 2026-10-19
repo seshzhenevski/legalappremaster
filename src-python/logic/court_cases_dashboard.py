@@ -98,12 +98,21 @@ CASE_COLUMN_ALIASES = {
     "status": ["статус"],
 }
 
-# В реестре «СУДЫ» ведут дела не только самого АО «Тривио»: в колонке
-# «Истец» встречаются и другие компании. В дашборд идут только свои дела —
-# по этому слову в наименовании истца. Сравнение по подстроке, потому что
-# форму собственности и кавычки пишут как придётся: «АО "Тривио"», «АО
-# Тривио», «ТРИВИО».
-OUR_PLAINTIFF_MARKER = "тривио"
+# Компании-истцы, по которым дашборд показывает дела отдельно. Узнаются по
+# слову в наименовании истца (на листе «БАНКРОТСТВО» — кредитора) — по
+# подстроке, потому что форму собственности и кавычки пишут как придётся:
+# «АО "Тривио"», «АО Тривио», «ТРИВИО». Порядок списка — порядок в фильтре.
+PLAINTIFF_COMPANIES = [
+    {"key": "trivio", "label": "ТРИВИО", "marker": "тривио"},
+    {"key": "victory", "label": "ВИКТОРИ", "marker": "виктори"},
+    {"key": "sikora", "label": "СИКОРА", "marker": "сикора"},
+    {"key": "gloria", "label": "ГЛОРИЯ", "marker": "глория"},
+]
+ALL_PLAINTIFFS = {"key": "all", "label": "Все"}
+
+# Реестр претензий печатается на бланке АО «Тривио», других истцов в нём нет.
+# Показывать его под чужим истцом значило бы выдать претензии Тривио за чужие.
+CLAIMS_REGISTRY_PLAINTIFF = "trivio"
 
 BANKRUPTCY_COLUMN_ALIASES = {
     "creditor": ["кредитор"],
@@ -212,6 +221,56 @@ def build_dashboard_data(case_rows: list, bankruptcy_rows: list,
     cases = _parse_case_rows(case_rows, warnings)
     bankruptcies = _parse_bankruptcy_rows(bankruptcy_rows, warnings)
 
+    # Верхний уровень ответа — все дела, как и раньше: на нём держится
+    # интерфейс при «Все» и все тесты. Срезы по истцам лежат рядом и устроены
+    # точно так же, поэтому интерфейс просто подменяет один набор другим.
+    data = _scope_payload(cases, bankruptcies, _claims_block(claim_rows, claim_error, cases))
+    data["plaintiffs"] = [ALL_PLAINTIFFS] + [
+        {"key": company["key"], "label": company["label"]} for company in PLAINTIFF_COMPANIES
+    ]
+    data["by_plaintiff"] = {
+        company["key"]: _plaintiff_scope(company, cases, bankruptcies, claim_rows, claim_error)
+        for company in PLAINTIFF_COMPANIES
+    }
+    data["warnings"] = _finalize_warnings(warnings)
+    return data
+
+
+def _plaintiff_scope(company: dict, cases: list[dict], bankruptcies: list[dict],
+                     claim_rows: list | None, claim_error: str | None) -> dict:
+    """
+    Считает показатели одного истца: его судебные дела, его банкротства.
+
+    Претензии считаются только у того истца, чей это реестр. У остальных
+    вместо показателей — пояснение: реестр ведётся по АО «Тривио», и
+    подставить его под другую компанию значило бы показать чужие претензии.
+    """
+    own_cases = [case for case in cases if case["plaintiff"] == company["key"]]
+    own_bankruptcies = [case for case in bankruptcies if case["plaintiff"] == company["key"]]
+
+    if company["key"] == CLAIMS_REGISTRY_PLAINTIFF:
+        claims = _claims_block(claim_rows, claim_error, own_cases)
+    else:
+        claims = {
+            "available": False,
+            "not_applicable": True,
+            "message": (
+                "Реестр претензий ведётся только по АО «Тривио» — "
+                f"претензий истца {company['label']} в нём нет."
+            ),
+        }
+
+    return _scope_payload(own_cases, own_bankruptcies, claims)
+
+
+def _scope_payload(cases: list[dict], bankruptcies: list[dict], claims: dict) -> dict:
+    """
+    Собирает показатели по одному набору дел: судебных, банкротных и претензий.
+
+    Одна функция обслуживает и общий обзор, и срез по истцу — отличается
+    только переданный набор. Годы у каждого набора свои: у истца, начавшего
+    судиться в 2025-м, в фильтре не должно быть пустого 2023-го.
+    """
     years = _sorted_years(cases)
 
     return {
@@ -235,8 +294,7 @@ def build_dashboard_data(case_rows: list, bankruptcy_rows: list,
             # обзоре и на экране года не показывается.
             "dynamics": _bankruptcy_dynamics(bankruptcies),
         },
-        "claims": _claims_block(claim_rows, claim_error, cases),
-        "warnings": _finalize_warnings(warnings),
+        "claims": claims,
     }
 
 
@@ -250,9 +308,9 @@ def _parse_case_rows(rows: list, warnings: dict) -> list[dict]:
     каждому делу год той секции, под которой оно стоит. Сами разделители в
     статистику не попадают. Пустые строки пропускаются.
 
-    В статистику идут только дела, где истец — АО «Тривио»: в реестре ведут и
-    чужие дела, а дашборд считает свои. Пропущенные строки попадают в счётчик,
-    а не исчезают молча, — иначе расхождение с таблицей было бы необъяснимым.
+    Каждое дело получает метку истца — по ней интерфейс показывает дела
+    одной компании. Ни одна строка при этом не выбрасывается: в общий обзор
+    идут все дела реестра, в том числе с пустым или незнакомым истцом.
     """
     if not rows:
         return []
@@ -261,11 +319,10 @@ def _parse_case_rows(rows: list, warnings: dict) -> list[dict]:
     cases = []
     current_year = None
 
-    # Колонку истца могли переименовать до неузнаваемости. Тогда фильтровать
-    # нечем, и лучше посчитать всё, чем показать пустой дашборд: расхождение
-    # видно сразу, а пустота выглядит как поломка приложения.
-    can_filter_by_plaintiff = "section" in columns
-    if not can_filter_by_plaintiff:
+    # Колонку истца могли переименовать до неузнаваемости. Тогда у всех дел
+    # метка пустая, и срезы по истцам окажутся пустыми — без пояснения это
+    # выглядело бы как поломка приложения.
+    if "section" not in columns:
         warnings["plaintiff_column_missing"] = True
 
     for offset, row in enumerate(rows[1:]):
@@ -278,11 +335,9 @@ def _parse_case_rows(rows: list, warnings: dict) -> list[dict]:
             current_year = separator_year
             continue
 
-        if can_filter_by_plaintiff and not _is_our_case(_cell(row, columns, "section")):
-            warnings["skipped_other_plaintiff"] += 1
-            continue
-
-        cases.append(_build_case(row, row_number, columns, current_year, warnings))
+        case = _build_case(row, row_number, columns, current_year, warnings)
+        case["plaintiff"] = _plaintiff_key(_cell(row, columns, "section"))
+        cases.append(case)
 
     return cases
 
@@ -482,10 +537,14 @@ def _parse_bankruptcy_rows(rows: list, warnings: dict) -> list[dict]:
         # отдельно (courts — сокращённый список), а в таблице топа показывается
         # склейкой через « / » (court).
         court_parts = _split_courts(_text(row, columns, "court"))
+        creditor = _text(row, columns, "creditor")
         cases.append({
             "row_number": row_number,
             "debtor": _text(row, columns, "debtor"),
-            "creditor": _text(row, columns, "creditor"),
+            "creditor": creditor,
+            # В банкротстве истца нет — его место занимает кредитор, и это та
+            # же компания: «Тривио» заявляет требования к банкроту.
+            "plaintiff": _plaintiff_key(creditor),
             "case_number": _text(row, columns, "case_number"),
             "court": " / ".join(court_parts),
             "courts": [_short_court_name(part) for part in court_parts],
@@ -1141,19 +1200,21 @@ def _is_blank_row(row: list) -> bool:
     return all(cell is None or str(cell).strip() == "" for cell in row)
 
 
-def _is_our_case(plaintiff_value) -> bool:
+def _plaintiff_key(plaintiff_value) -> str:
     """
-    Отвечает, наше ли это дело по наименованию истца.
+    Узнаёт компанию-истца по наименованию.
 
-    Принимает значение ячейки «Истец». Ищет слово «Тривио» внутри
-    наименования: форму собственности, кавычки и регистр в реестре пишут
-    по-разному, а узнаётся компания всё равно по одному слову.
-
-    Пустая ячейка — не наше дело. Решение строгое намеренно: иначе строка, у
-    которой истца забыли указать, попадала бы в нашу статистику незаметно.
-    Сколько таких строк пропущено, видно в блоке предупреждений.
+    Принимает значение ячейки «Истец» (или «Кредитор»). Возвращает ключ
+    компании из PLAINTIFF_COMPANIES или пустую строку, если компания не
+    узнана. Ищется слово внутри наименования: форму собственности, кавычки и
+    регистр в реестре пишут по-разному, а узнаётся компания всё равно по
+    одному слову.
     """
-    return OUR_PLAINTIFF_MARKER in _normalize_text(plaintiff_value)
+    normalized = _normalize_text(plaintiff_value)
+    for company in PLAINTIFF_COMPANIES:
+        if company["marker"] in normalized:
+            return company["key"]
+    return ""
 
 
 def _year_from_separator(offer_value) -> str | None:
@@ -1194,7 +1255,6 @@ def _new_warnings() -> dict:
     return {
         "cases_without_status": 0,
         "cases_without_debtor": 0,
-        "skipped_other_plaintiff": 0,
         "plaintiff_column_missing": False,
         "unparsed_amounts": [],
         "unknown_statuses": [],
@@ -1211,7 +1271,6 @@ def _finalize_warnings(warnings: dict) -> dict:
     return {
         "cases_without_status": warnings["cases_without_status"],
         "cases_without_debtor": warnings["cases_without_debtor"],
-        "skipped_other_plaintiff": warnings["skipped_other_plaintiff"],
         "plaintiff_column_missing": warnings["plaintiff_column_missing"],
         "unparsed_amounts_count": len(warnings["unparsed_amounts"]),
         "unparsed_amounts": warnings["unparsed_amounts"][:WARNING_SAMPLES_LIMIT],
