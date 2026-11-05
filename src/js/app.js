@@ -14,6 +14,7 @@ import { initPenaltyTab } from "./tab-penalty.js";
 import { initStateDutyTab } from "./tab-state-duty.js";
 import { initDashboardTab } from "./tab-dashboard.js";
 import { initKnowledgeBaseTab } from "./tab-knowledge-base.js";
+import { initTasksTab } from "./tab-tasks.js";
 import { initDatePickers } from "./date-picker.js";
 
 /**
@@ -35,6 +36,7 @@ function initApplication() {
   initStateDutyTab();
   initDashboardTab();
   initKnowledgeBaseTab();
+  initTasksTab();
 }
 
 window.addEventListener("DOMContentLoaded", initApplication);

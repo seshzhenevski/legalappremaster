@@ -664,6 +664,11 @@
           <span class="sidebar-icon" aria-hidden="true"><svg class="lucide" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16" /> <path d="M18 17V9" /> <path d="M13 17V5" /> <path d="M8 17v-3" /></svg></span>
           <span class="sidebar-label">Дашборд</span>
         </button>
+        <button data-tab-target="panel-tasks" type="button"
+          class="sidebar-item" title="Задачи">
+          <span class="sidebar-icon" aria-hidden="true"><svg class="lucide" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2" /> <path d="M8 7v7" /> <path d="M12 7v4" /> <path d="M16 7v9" /></svg></span>
+          <span class="sidebar-label">Задачи</span>
+        </button>
       </nav>
 
       <!-- Переключатель темы: закреплён внизу сайдбара. Один контрол, две
@@ -1971,6 +1976,39 @@
       </div>
     </section>
 
+    <!-- Панель: Задачи — личная доска. Колонки и карточки рисует
+         tab-tasks.js, здесь только каркас. -->
+    <section id="panel-tasks" data-tab-panel class="hidden h-full">
+
+      <div id="tasks-loading-pane" class="h-full flex items-center justify-center">
+        <p class="text-sm text-slate-500">Загружаю задачи…</p>
+      </div>
+
+      <!-- Доску не удалось прочитать. Пустая доска на её месте не
+           показывается: сохранённая поверх, она стёрла бы задачи. -->
+      <div id="tasks-error-pane" class="hidden h-full flex items-center justify-center">
+        <div class="bg-white rounded-xl border border-slate-200 p-8 max-w-lg text-center space-y-3">
+          <p class="font-medium text-slate-700">Не удалось открыть задачи</p>
+          <p id="tasks-error-text" class="text-sm text-slate-500 break-all"></p>
+          <p class="text-sm text-slate-500">
+            Задачи при этом не тронуты. Перезапустите приложение; если ошибка
+            повторится, сообщите о ней.
+          </p>
+        </div>
+      </div>
+
+      <div id="tasks-content-pane" class="hidden h-full flex flex-col min-h-0">
+        <div class="tasks-toolbar">
+          <input id="tasks-search" type="search" autocomplete="off"
+            placeholder="Поиск по задачам, комментариям и файлам"
+            aria-label="Поиск по задачам"
+            class="w-96 px-3 py-2 border border-slate-300 rounded-lg text-sm">
+          <span id="tasks-search-counter" class="tasks-search-counter" aria-live="polite"></span>
+        </div>
+        <div id="tasks-board" class="tasks-board thin-scroll"></div>
+      </div>
+    </section>
+
     </main>
   </div>
 
@@ -2041,6 +2079,89 @@
         class="w-full bg-slate-100 hover:bg-slate-200 rounded-lg py-2 text-sm">
         Закрыть
       </button>
+    </div>
+  </div>
+
+  <!-- Окно задачи доски. Правки записываются сразу, как только из поля
+       уходят; «Сохранить» дописывает недобавленное и закрывает окно. -->
+  <div id="task-modal" class="hidden tasks-modal-overlay">
+    <div id="task-modal-dialog" class="tasks-modal" role="dialog" aria-modal="true"
+      aria-labelledby="task-modal-title" tabindex="-1">
+      <div class="tasks-modal-header">
+        <button id="task-modal-done" type="button" class="tasks-done-toggle">
+          <svg class="lucide" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10" /><path d="m9 12 2 2 4-4" /></svg>
+        </button>
+        <textarea id="task-modal-title" class="tasks-modal-title-input" rows="1"
+          aria-label="Название задачи"></textarea>
+        <button id="task-modal-close" type="button" class="tasks-icon-button"
+          aria-label="Закрыть" title="Закрыть (Esc)">
+          <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+        </button>
+      </div>
+
+      <div id="task-modal-body" class="tasks-modal-body thin-scroll">
+        <div class="tasks-modal-fields">
+          <label class="tasks-field">
+            <span class="tasks-field-label">Колонка</span>
+            <select id="task-modal-column" class="tasks-select"></select>
+          </label>
+          <div class="tasks-field">
+            <span class="tasks-field-label">Срок</span>
+            <div class="tasks-deadline-row">
+              <div id="task-modal-deadline-slot" class="tasks-deadline-slot"></div>
+              <button id="task-modal-deadline-clear" type="button" class="tasks-link-button">Убрать</button>
+              <span id="task-modal-deadline-state" class="tasks-deadline-state"></span>
+            </div>
+          </div>
+        </div>
+
+        <section class="tasks-section">
+          <h4 class="tasks-section-title">Описание</h4>
+          <textarea id="task-modal-description" class="tasks-textarea" rows="3"
+            placeholder="Что именно нужно сделать"></textarea>
+        </section>
+
+        <!-- Чек-лист нужен не каждой задаче, поэтому у задачи без пунктов
+             вместо раздела — кнопка, которая его открывает. -->
+        <button id="task-modal-checklist-create" type="button" class="tasks-link-button tasks-create-button">+ Создать чек-лист</button>
+        <section id="task-modal-checklist-section" class="tasks-section">
+          <div class="tasks-section-head">
+            <h4 class="tasks-section-title">Чек-лист</h4>
+            <span id="task-modal-checklist-progress" class="tasks-section-hint"></span>
+          </div>
+          <div id="task-modal-checklist-bar" class="hidden tasks-progress tasks-progress-wide"><div class="tasks-progress-bar"></div></div>
+          <ul id="task-modal-checklist" class="tasks-checklist"></ul>
+          <input id="task-modal-checklist-new" type="text" class="tasks-input"
+            placeholder="Новый пункт — Enter, чтобы добавить" aria-label="Новый пункт чек-листа">
+        </section>
+
+        <section class="tasks-section">
+          <div class="tasks-section-head">
+            <h4 class="tasks-section-title">Файлы</h4>
+            <button id="task-modal-attach" type="button" class="tasks-link-button">+ Прикрепить файл</button>
+          </div>
+          <ul id="task-modal-attachments" class="tasks-attachments"></ul>
+        </section>
+
+        <section class="tasks-section">
+          <h4 class="tasks-section-title">Комментарии</h4>
+          <textarea id="task-modal-comment-new" class="tasks-textarea" rows="2"
+            placeholder="Написать комментарий… Ctrl+Enter — добавить"
+            aria-label="Новый комментарий"></textarea>
+          <div class="tasks-comment-buttons">
+            <button id="task-modal-comment-add" type="button" class="tasks-primary-button">Добавить комментарий</button>
+          </div>
+          <ul id="task-modal-comments" class="tasks-comments"></ul>
+        </section>
+      </div>
+
+      <div class="tasks-modal-footer">
+        <span id="task-modal-created" class="tasks-section-hint"></span>
+        <div class="tasks-modal-footer-actions">
+          <button id="task-modal-save" type="button" class="tasks-primary-button">Сохранить</button>
+          <button id="task-modal-delete" type="button" class="tasks-danger-button">Удалить задачу</button>
+        </div>
+      </div>
     </div>
   </div>
 

@@ -28,6 +28,10 @@ let activeMenu = null;
  * Пункт с danger оформляется предупреждающим цветом — удаление не должно
  * выглядеть так же, как переименование.
  *
+ * Кроме пунктов в списке бывают разделитель { separator: true },
+ * подзаголовок { heading } и сетка цветов { swatches, selected, onPick } —
+ * ими доска задач собирает меню колонки с выбором цвета.
+ *
  * Меню закрывается выбором пункта, кликом мимо, Escape, прокруткой и сменой
  * размера окна: всё это уводит кнопку из-под меню, и оставленное висеть меню
  * оказалось бы привязанным к пустому месту.
@@ -39,6 +43,25 @@ export function openMenu(anchorElement, items) {
   menu.dataset.columns = "1";
 
   items.forEach((item) => {
+    if (item.separator) {
+      const line = document.createElement("div");
+      line.className = "kb-menu-separator";
+      line.setAttribute("role", "separator");
+      menu.appendChild(line);
+      return;
+    }
+    if (item.heading) {
+      const heading = document.createElement("div");
+      heading.className = "kb-menu-heading";
+      heading.textContent = item.heading;
+      menu.appendChild(heading);
+      return;
+    }
+    if (item.swatches) {
+      menu.appendChild(buildSwatchGrid(item));
+      return;
+    }
+
     const button = document.createElement("button");
     button.type = "button";
     button.className = item.danger ? "kb-menu-item kb-menu-item-danger" : "kb-menu-item";
@@ -53,6 +76,37 @@ export function openMenu(anchorElement, items) {
   });
 
   showPopover(anchorElement, menu);
+}
+
+/**
+ * Собирает сетку цветов для меню.
+ *
+ * Принимает запись { swatches: [{ value, label, color }], selected, onPick },
+ * где color — три числа RGB через пробел, как в токенах темы. Выбранный
+ * цвет отмечен галочкой, а название цвета — в подсказке и для экранного
+ * диктора: кружок цвета сам по себе ему ничего не говорит.
+ */
+function buildSwatchGrid(item) {
+  const grid = document.createElement("div");
+  grid.className = "kb-swatch-grid";
+  item.swatches.forEach((swatch) => {
+    const isSelected = swatch.value === item.selected;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "kb-swatch";
+    button.dataset.kbPopoverItem = "";
+    button.style.setProperty("--swatch-color", swatch.color);
+    button.setAttribute("aria-pressed", String(isSelected));
+    button.setAttribute("aria-label", swatch.label);
+    button.title = swatch.label;
+    button.textContent = isSelected ? "✓" : "";
+    button.addEventListener("click", () => {
+      closeMenu();
+      item.onPick(swatch.value);
+    });
+    grid.appendChild(button);
+  });
+  return grid;
 }
 
 /**
