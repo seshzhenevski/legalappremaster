@@ -1460,6 +1460,20 @@
               <div class="flex items-start gap-3">
                 <span id="kb-article-icon" class="text-2xl leading-none" aria-hidden="true"></span>
                 <h2 id="kb-article-title" class="text-xl font-medium text-slate-700 flex-1"></h2>
+                <!-- Переход по найденному в статье. Виден, только когда в ней
+                     есть совпадения с запросом из поиска: без него читатель
+                     попадал к первому месту, а к остальным — только прокруткой. -->
+                <div id="kb-search-nav" class="hidden kb-search-nav" role="group" aria-label="Найденное в статье">
+                  <span id="kb-search-nav-counter" class="kb-search-nav-counter" aria-live="polite"></span>
+                  <button id="kb-search-prev" type="button" class="kb-search-nav-button"
+                    aria-label="Предыдущее совпадение" title="Предыдущее совпадение (Shift+Enter в поиске)">
+                    <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6" /></svg>
+                  </button>
+                  <button id="kb-search-next" type="button" class="kb-search-nav-button"
+                    aria-label="Следующее совпадение" title="Следующее совпадение (Enter в поиске)">
+                    <svg class="lucide" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+                  </button>
+                </div>
                 <div class="flex gap-2 shrink-0">
                   <button id="kb-edit-button" type="button" class="bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 text-sm">Изменить</button>
                   <!-- Редкие действия над статьёй — в меню: в шапке они

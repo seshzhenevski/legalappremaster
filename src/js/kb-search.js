@@ -187,9 +187,10 @@ export function searchArticles(articles, query) {
   const byBody = [];
 
   articles.forEach((article) => {
-    // Текст без экранирования: в файле «Чек\-лист», и по запросу «чек-лист»
+    // Текст без разметки: в файле «Чек\-лист», и по запросу «чек-лист»
     // статья не находилась вовсе — обратный слеш стоял ровно посередине
-    // слова. Готовится один раз при загрузке базы, а не на каждое нажатие.
+    // слова, а во фрагменты попадали решётки заголовков и уголки цитат.
+    // Готовится один раз при загрузке базы, а не на каждое нажатие.
     const body = article.searchText ?? article.body;
     const titleMatches = findMatches(normalizeForSearch(article.title), stem);
     const bodyMatches = findMatches(normalizeForSearch(body), stem);

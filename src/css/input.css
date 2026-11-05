@@ -1241,11 +1241,50 @@
     color: var(--ink);
   }
 
-  /* Подсветка найденного — и в списке, и в открытой статье. */
+  /* Подсветка найденного — и в списке, и в открытой статье. Текст того же
+     цвета, что и основной: в тёмной теме фон подсветки тёмный, и прежний
+     тёмный текст на нём не читался. */
   .kb-mark {
     padding: 0 1px;
     border-radius: 3px;
     background: rgb(var(--c-amber-200));
-    color: rgb(var(--c-graphite));
+    color: var(--ink);
+  }
+  /* Место, к которому читатель перешёл. Выделено обводкой, а не другим
+     фоном: обводка одинаково заметна на светлой и на тёмной теме. */
+  .kb-mark-current {
+    box-shadow: 0 0 0 2px rgb(var(--c-amber-600));
+  }
+
+  /* Переход по найденному в шапке статьи: «3 из 24» и две стрелки. */
+  .kb-search-nav {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 2px;
+    height: 30px;
+  }
+  .kb-search-nav-counter {
+    padding: 0 6px;
+    color: var(--ink-muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .kb-search-nav-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ink-secondary);
+    cursor: pointer;
+  }
+  .kb-search-nav-button:hover {
+    background: var(--veil);
+    color: var(--ink);
   }
 }

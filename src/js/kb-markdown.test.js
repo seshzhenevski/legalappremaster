@@ -11,6 +11,7 @@ import {
   extractArticleLinks,
   extractHeadings,
   headingAnchorId,
+  markdownToPlainText,
   renderMarkdown,
   unescapeMarkdown,
 } from "./kb-markdown.js";
@@ -451,4 +452,50 @@ test("unescapeMarkdown снимает слеши со знаков препин�
 
 test("unescapeMarkdown не трогает слеш перед буквой", () => {
   assert.equal(unescapeMarkdown(String.raw`C:\temp`), String.raw`C:\temp`);
+});
+
+test("markdownToPlainText убирает разметку блоков", () => {
+  // Случай со скриншота: разделитель, заголовок и цитата шли во фрагмент
+  // поиска как «… *** ### ▪ Ограничение…».
+  const text = markdownToPlainText(
+    "Текст до\n\n***\n\n### ▪ Ограничение неустойки\n\n> Уменьшение неустойки\n\n"
+    + "- пункт списка\n1. нумерованный\n- [x] сделано",
+  );
+  for (const symbol of ["*", "#", ">", "- ", "1."]) {
+    assert.ok(!text.includes(symbol), `в тексте остался «${symbol}»: ${text}`);
+  }
+  assert.ok(text.includes("▪ Ограничение неустойки"));
+  assert.ok(text.includes("Уменьшение неустойки"));
+  assert.ok(text.includes("пункт списка"));
+});
+
+test("markdownToPlainText убирает разметку внутри строки", () => {
+  assert.equal(
+    markdownToPlainText("**Неустойка**, начисляемая по *ставке* из _договора_"),
+    "Неустойка, начисляемая по ставке из договора",
+  );
+  assert.equal(
+    markdownToPlainText("сведения из [ЕГРЮЛ](kb-ab12) и [сайта](https://nalog.ru)"),
+    "сведения из ЕГРЮЛ и сайта",
+  );
+  assert.equal(markdownToPlainText(String.raw`Чек\-лист \(п\. 9\)`), "Чек-лист (п. 9)");
+});
+
+test("markdownToPlainText возвращает знаки, которые отрисовка экранирует", () => {
+  assert.equal(
+    markdownToPlainText(`ООО "Ромашка" & ИП <Иванов>, ст. 'особая'`),
+    `ООО "Ромашка" & ИП <Иванов>, ст. 'особая'`,
+  );
+});
+
+test("markdownToPlainText разделяет соседние блоки и ячейки", () => {
+  // Слова из соседних ячеек и абзацев не должны склеиваться: иначе поиск
+  // не нашёл бы второе слово с начала.
+  const text = markdownToPlainText(
+    "| Срок | Сумма |\n|---|---|\n| 10 дней | 500 |\n\nАбзац один\n\nАбзац два",
+  );
+  assert.deepEqual(
+    text.split(/\s+/),
+    ["Срок", "Сумма", "10", "дней", "500", "Абзац", "один", "Абзац", "два"],
+  );
 });

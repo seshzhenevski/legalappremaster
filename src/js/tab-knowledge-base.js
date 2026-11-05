@@ -38,8 +38,8 @@ import { loadKnowledgeBaseRoot, saveKnowledgeBaseRoot } from "./kb-settings-stor
 import {
   extractArticleLinks,
   extractHeadings,
+  markdownToPlainText,
   renderMarkdown,
-  unescapeMarkdown,
 } from "./kb-markdown.js";
 import { createVisualEditor } from "./kb-wysiwyg.js";
 import {
@@ -139,6 +139,13 @@ let isBackendBusy = false;
 let selectedRelativePath = "";
 let collapsedFolders = new Set();
 
+// Найденные в открытой статье места и то, к которому читатель перешёл
+// последним: от него стрелки и Enter отсчитывают следующее.
+const searchHits = {
+  marks: [],
+  current: -1,
+};
+
 // Состояние правки. Отпечаток запоминается на момент открытия статьи: именно
 // он позволяет при сохранении понять, что статью тем временем правил кто-то
 // ещё, и не затереть чужую работу.
@@ -163,7 +170,12 @@ export function initKnowledgeBaseTab() {
     return;
   }
 
-  searchInput.addEventListener("input", renderTreePane);
+  searchInput.addEventListener("input", handleSearchInput);
+  searchInput.addEventListener("keydown", handleSearchKeydown);
+  document.getElementById("kb-search-prev")
+    .addEventListener("click", () => goToSearchHit(searchHits.current - 1));
+  document.getElementById("kb-search-next")
+    .addEventListener("click", () => goToSearchHit(searchHits.current + 1));
   document.getElementById("kb-refresh-button")
     .addEventListener("click", () => reloadKnowledgeBase(true));
 
@@ -387,10 +399,10 @@ function restoreSelection() {
  * что рисуется на экране, а память заполняется одинаково.
  */
 function applyLoadedBase(loaded) {
-  // Текст для поиска готовится один раз на загрузку: снимать экранирование
+  // Текст для поиска готовится один раз на загрузку: разбирать разметку
   // на каждое нажатие клавиши в поиске — это сотни статей заново.
   loaded.articles.forEach((article) => {
-    article.searchText = unescapeMarkdown(article.body);
+    article.searchText = markdownToPlainText(article.body);
   });
 
   knowledgeBase.tree = loaded.tree;
@@ -1017,10 +1029,11 @@ function revealFolderInTree(folderPath) {
 /**
  * Показывает статью в правой колонке.
  *
- * Принимает относительный путь статьи. Берёт её из памяти — обращения к
- * бэкенду здесь не происходит, поэтому переход мгновенный.
+ * Принимает относительный путь статьи и номер найденного места, к которому
+ * подвести читателя (по умолчанию — к первому). Берёт статью из памяти —
+ * обращения к бэкенду здесь не происходит, поэтому переход мгновенный.
  */
-function showArticle(relativePath) {
+function showArticle(relativePath, searchHitIndex = 0) {
   const article = knowledgeBase.articlesByPath.get(relativePath);
   if (!article) {
     return;
@@ -1044,7 +1057,7 @@ function showArticle(relativePath) {
   renderArticleProperties(article);
   renderTableOfContents(article);
   renderBacklinks(article);
-  highlightSearchInArticle(searchStem(currentSearchQuery()));
+  highlightSearchInArticle(searchStem(currentSearchQuery()), searchHitIndex);
 }
 
 /**
@@ -1400,6 +1413,11 @@ function toggleEditChrome(isEditing) {
   shown("kb-article-menu-button", !isEditing);
   shown("kb-save-button", isEditing);
   shown("kb-cancel-button", isEditing);
+  // Найденное подсвечено в просмотре; в правке его не видно, и стрелки
+  // двигали бы невидимое.
+  if (isEditing) {
+    shown("kb-search-nav", false);
+  }
 }
 
 /**
@@ -1552,7 +1570,7 @@ async function applySavedArticle(previousPath, savedBody, result) {
 
   article.properties = result.properties;
   article.body = savedBody;
-  article.searchText = unescapeMarkdown(savedBody);
+  article.searchText = markdownToPlainText(savedBody);
   article.fingerprint = result.fingerprint;
   article.title = result.properties.title || article.title;
   article.status = result.properties.status || article.status;
@@ -2686,6 +2704,42 @@ function currentSearchQuery() {
 }
 
 /**
+ * Отвечает на набор в поле поиска: список слева и подсветка в статье.
+ *
+ * Подсветка в открытой статье идёт за запросом: иначе в ней остались бы
+ * места прежнего запроса, и стрелки водили бы по ним.
+ */
+function handleSearchInput() {
+  renderTreePane();
+  if (selectedRelativePath && !editState.isEditing) {
+    highlightSearchInArticle(searchStem(currentSearchQuery()));
+  }
+}
+
+/**
+ * Enter в поле поиска ведёт к следующему найденному месту, Shift+Enter — к
+ * предыдущему, как в поиске браузера.
+ *
+ * Если в открытой статье искать нечего, Enter открывает первую статью из
+ * результатов: так весь поиск проходится, не снимая рук с клавиатуры.
+ */
+function handleSearchKeydown(event) {
+  if (event.key !== "Enter" || editState.isEditing) {
+    return;
+  }
+  event.preventDefault();
+
+  if (searchHits.marks.length) {
+    goToSearchHit(searchHits.current + (event.shiftKey ? -1 : 1));
+    return;
+  }
+  const [first] = searchArticles(knowledgeBase.articles, currentSearchQuery());
+  if (first) {
+    openArticleFromSearch(first.article);
+  }
+}
+
+/**
  * Собирает строку результата: заголовок, путь, счётчик и фрагменты текста.
  *
  * Принимает запись результата поиска. Фрагменты собираются из отдельных
@@ -2709,7 +2763,7 @@ function buildSearchResultItem(result) {
     : `совпадений: ${result.matchCount}`;
   button.appendChild(count);
 
-  result.snippets.forEach((snippet) => {
+  result.snippets.forEach((snippet, index) => {
     const line = document.createElement("button");
     line.type = "button";
     line.className = "kb-search-snippet";
@@ -2721,7 +2775,10 @@ function buildSearchResultItem(result) {
     line.appendChild(mark);
 
     line.appendChild(document.createTextNode(snippet.after));
-    line.addEventListener("click", () => openArticleFromSearch(article));
+    // Фрагменты идут в порядке текста, поэтому номер фрагмента — это номер
+    // места в статье. Раньше любой фрагмент вёл к первому месту, и второй с
+    // третьим выглядели как не сработавшие.
+    line.addEventListener("click", () => openArticleFromSearch(article, index));
     row.appendChild(line);
   });
 
@@ -2730,26 +2787,32 @@ function buildSearchResultItem(result) {
 
 /**
  * Открывает статью из результатов поиска и ведёт к найденному месту.
+ *
+ * Принимает статью и номер места, к которому подвести (по умолчанию — к
+ * первому).
  */
-function openArticleFromSearch(article) {
+function openArticleFromSearch(article, searchHitIndex = 0) {
   if (editState.isEditing) {
     showToast("Сначала сохраните или отмените правки открытой статьи");
     return;
   }
-  showArticle(article.relative_path);
+  showArticle(article.relative_path, searchHitIndex);
   renderTreePane();
 }
 
 /**
- * Подсвечивает найденное в открытой статье и прокручивает к первому месту.
+ * Подсвечивает найденное в открытой статье и подводит к одному из мест.
  *
- * Принимает основу запроса. Подсветка ставится обходом текстовых узлов, а не
- * заменой в разметке: замена по строке испортила бы теги и атрибуты — слово
- * из запроса может встретиться внутри имени класса или адреса ссылки.
+ * Принимает основу запроса и номер места, к которому подвести. Подсветка
+ * ставится обходом текстовых узлов, а не заменой в разметке: замена по строке
+ * испортила бы теги и атрибуты — слово из запроса может встретиться внутри
+ * имени класса или адреса ссылки.
  */
-function highlightSearchInArticle(stem) {
+function highlightSearchInArticle(stem, hitIndex = 0) {
   const container = document.getElementById("kb-article-body");
+  clearSearchHighlight(container);
   if (!stem) {
+    renderSearchNav();
     return;
   }
 
@@ -2759,7 +2822,6 @@ function highlightSearchInArticle(stem) {
     textNodes.push(walker.currentNode);
   }
 
-  let firstMark = null;
   textNodes.forEach((node) => {
     const positions = findMatches(normalizeForSearch(node.nodeValue), stem);
     if (!positions.length) {
@@ -2782,14 +2844,67 @@ function highlightSearchInArticle(stem) {
       mark.className = "kb-mark";
       mark.textContent = node.nodeValue.slice(word.start, word.end);
       fragment.appendChild(mark);
-      firstMark = firstMark || mark;
+      searchHits.marks.push(mark);
       cursor = word.end;
     });
     fragment.appendChild(document.createTextNode(node.nodeValue.slice(cursor)));
     node.parentNode.replaceChild(fragment, node);
   });
 
-  if (firstMark) {
-    firstMark.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (searchHits.marks.length) {
+    // Номер фрагмента считан по исходному тексту статьи, а места — по
+    // показанному; если их меньше, ведём к последнему, а не никуда.
+    goToSearchHit(Math.min(hitIndex, searchHits.marks.length - 1));
+  } else {
+    renderSearchNav();
   }
+}
+
+/**
+ * Снимает подсветку прежнего запроса со статьи.
+ *
+ * Принимает контейнер текста статьи. Соседние текстовые узлы склеиваются
+ * обратно: слово, разрезанное прежней подсветкой на части, иначе не нашлось
+ * бы при следующей — поиск идёт по каждому текстовому узлу отдельно.
+ */
+function clearSearchHighlight(container) {
+  container.querySelectorAll("mark.kb-mark").forEach((mark) => {
+    mark.replaceWith(document.createTextNode(mark.textContent));
+  });
+  container.normalize();
+  searchHits.marks = [];
+  searchHits.current = -1;
+}
+
+/**
+ * Подводит читателя к найденному месту с указанным номером.
+ *
+ * Принимает номер места. Счёт идёт по кругу: после последнего места —
+ * снова первое, как в поиске браузера.
+ */
+function goToSearchHit(index) {
+  const total = searchHits.marks.length;
+  if (!total) {
+    return;
+  }
+  const next = ((index % total) + total) % total;
+
+  searchHits.marks[searchHits.current]?.classList.remove("kb-mark-current");
+  searchHits.current = next;
+  const mark = searchHits.marks[next];
+  mark.classList.add("kb-mark-current");
+  mark.scrollIntoView({ behavior: "smooth", block: "center" });
+  renderSearchNav();
+}
+
+/**
+ * Обновляет счётчик «3 из 24» в шапке статьи и прячет его, когда в статье
+ * ничего не найдено.
+ */
+function renderSearchNav() {
+  const total = searchHits.marks.length;
+  document.getElementById("kb-search-nav")
+    .classList.toggle("hidden", !total || editState.isEditing);
+  document.getElementById("kb-search-nav-counter").textContent =
+    total ? `${searchHits.current + 1} из ${total}` : "";
 }
