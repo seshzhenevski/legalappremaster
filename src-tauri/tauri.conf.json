@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Legal App (задачи)",
-  "version": "6.9.1-2",
-  "identifier": "ru.trivio.legal-tools.tasks",
+  "productName": "Legal App",
+  "version": "6.10.0",
+  "identifier": "ru.trivio.legal-tools",
   "build": {
     "frontendDist": "../src"
   },
@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Legal App — прототип доски задач",
+        "title": "Legal App",
         "width": 1400,
         "height": 820,
         "minWidth": 980,
