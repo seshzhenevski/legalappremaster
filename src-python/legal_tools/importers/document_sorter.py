@@ -28,22 +28,27 @@ _RU_MONTHS = {
 }
 _TEXT_DATE_RE = re.compile(r"(\d{1,2})\s+([А-Яа-яЁё]+)\s+(\d{2,4})")
 
+# Дата в описании счетов из 1С: «23.06.2025», «23.06.25» или «23 июня 2025».
+# Хвост « г.»/« года» в захват не входит — для разбора он не нужен.
+_DATE_IN_TEXT = r"(\d{1,2}\.\d{1,2}\.\d{2,4}|\d{1,2}\s+[А-Яа-яЁё]+\s+\d{2,4})"
+
 
 def _parse_date(date_str: str) -> Optional[datetime]:
     """
     Парсит дату из строки. Поддерживает встречающиеся в именах документов
     форматы:
       • ДД.ММ.ГГГГ и ДД.ММ.ГГ («25.02.2026», «28.02.25»);
-      • текстовый русский месяц («02 марта 2026 г.», «2 марта 2026»).
-    Хвост « г.»/«г» и лишние точки/пробелы по краям отбрасываются, поэтому
-    одна и та же дата в разной записи приводится к одному значению —
+      • текстовый русский месяц («02 марта 2026 г.», «2 марта 2026 года»,
+        «2 марта 2026»).
+    Хвост « г.»/«г»/« года» и лишние точки/пробелы по краям отбрасываются,
+    поэтому одна и та же дата в разной записи приводится к одному значению —
     это позволяет сопоставлять счёт из описания 1С с файлом на диске.
     """
     if not date_str:
         return None
     s = date_str.strip()
-    # Отбросить хвост « г.» / « г» и краевые точки/пробелы.
-    s = re.sub(r"\s*г\.?\s*$", "", s, flags=re.IGNORECASE).strip().strip(".").strip()
+    # Отбросить хвост « г.» / « г» / « года» и краевые точки/пробелы.
+    s = re.sub(r"\s*(?:года|г\.?)\s*$", "", s, flags=re.IGNORECASE).strip().strip(".").strip()
     for fmt in ("%d.%m.%Y", "%d.%m.%y"):
         try:
             return datetime.strptime(s, fmt)
@@ -61,6 +66,18 @@ def _parse_date(date_str: str) -> Optional[datetime]:
             except ValueError:
                 return None
     return None
+
+
+def _date_for_filename(date_str: str) -> str:
+    """
+    Дата для имени пакета: «24.06.2025» → «24-06-2025». Текстовая дата
+    («24 июня 2025») приводится к тому же цифровому виду, чтобы имена
+    пакетов не зависели от того, как дата записана в 1С.
+    """
+    if re.fullmatch(r"[\d.]+", date_str):
+        return date_str.replace(".", "-")
+    d = _parse_date(date_str)
+    return d.strftime("%d-%m-%Y") if d else date_str
 
 try:
     from pypdf import PdfWriter, PdfReader
@@ -109,19 +126,20 @@ class DocumentSorter:
     # Дата захватывается «широко» (.+?) и разбирается _parse_date — это
     # покрывает и точечные («25.02.2026»), и текстовые («02 марта 2026 г.»)
     # даты. Префикс «Печатная форма» и пробел после «№» — необязательны,
-    # чтобы читать оба варианта именования Счёта/УПД/Акта.
+    # чтобы читать оба варианта именования Счёта/УПД/Акта. Акт бывает и
+    # полным («Акт приема-передачи №…»), и коротким («Акт №…»).
     _PATTERNS: Dict[str, re.Pattern] = {
         "счет": re.compile(
             r"Счет на оплату №\s*(\d+)\s+от\s+(.+?)\.pdf$", re.IGNORECASE),
         "акт":  re.compile(
-            r"(?:Печатная форма\s+)?Акт приема-передачи №\s*(\d+)\s+от\s+(.+?)\.pdf$",
+            r"(?:Печатная форма\s+)?Акт(?: приема-передачи)? №\s*(\d+)\s+от\s+(.+?)\.pdf$",
             re.IGNORECASE),
         "упд":  re.compile(
             r"(?:Печатная форма\s+)?УПД №\s*(\d+)\s+от\s+(.+?)\.pdf$", re.IGNORECASE),
     }
-    _INVOICE_RE = re.compile(r"Счет на оплату №\s*(\d+) от ([\d.]+)")
-    _ACT_RE     = re.compile(r"Акт приема-передачи №\s*(\d+) от ([\d.]+)")
-    _UPD_RE     = re.compile(r"УПД №\s*(\d+) от ([\d.]+)")
+    _INVOICE_RE = re.compile(r"Счет на оплату №\s*(\d+) от " + _DATE_IN_TEXT)
+    _ACT_RE     = re.compile(r"Акт(?: приема-передачи)? №\s*(\d+) от " + _DATE_IN_TEXT)
+    _UPD_RE     = re.compile(r"УПД №\s*(\d+) от " + _DATE_IN_TEXT)
 
     def __init__(self, source_folder: str, output_folder: str,
                  log_callback=None):
@@ -226,7 +244,7 @@ class DocumentSorter:
         # Порядок: 1-счёт, 2-акт, 3-упд
         found.sort(key=lambda x: self.DOC_ORDER.get(x["type"], 99))
 
-        out_name = f"Счет_{number}_от_{d.replace('.', '-')}_полный_пакет.pdf"
+        out_name = f"Счет_{number}_от_{_date_for_filename(d)}_полный_пакет.pdf"
         out_path = self.output_folder / out_name
 
         for item in found:
