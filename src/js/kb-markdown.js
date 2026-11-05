@@ -342,7 +342,7 @@ export function extractArticleLinks(markdownText) {
 function renderDocumentLink(label, target, documents) {
   const state = documents ? documents.get(target) : null;
   const name = decodeDocumentName(target);
-  const icon = DOCUMENT_ICONS[fileExtension(name)] || "📎";
+  const icon = documentIconFor(name);
 
   if (state && !state.available) {
     const reason = escapeHtml(state.reason || "Файл недоступен");
@@ -371,6 +371,16 @@ function decodeDocumentName(target) {
     // Испорченное кодирование — показываем как есть, это лучше ошибки.
   }
   return readable.split(/[\/]/).pop() || readable;
+}
+
+/**
+ * Возвращает значок документа по имени файла.
+ *
+ * Нужен и доске задач: прикреплённый к задаче файл показывается тем же
+ * значком, что ссылка на документ в статье.
+ */
+export function documentIconFor(fileName) {
+  return DOCUMENT_ICONS[fileExtension(fileName)] || "📎";
 }
 
 /**
